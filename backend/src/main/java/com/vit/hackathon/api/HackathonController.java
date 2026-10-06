@@ -136,6 +136,16 @@ public class HackathonController {
         students.deleteById(studentId);
     }
 
+    @PutMapping("/admin/students/{studentId}/leader")
+    public Team assignLeader(@RequestHeader("X-Admin-Password") String password,
+                             @PathVariable Long studentId) {
+        requireAdmin(password);
+        Student leader = students.findById(studentId).orElseThrow();
+        Team team = leader.getTeam();
+        team.getStudents().forEach(student -> student.setLeader(student.getId().equals(studentId)));
+        return teams.save(team);
+    }
+
     @PutMapping("/admin/teams/{teamId}/problem/{problemId}")
     public Team assignProblem(@RequestHeader("X-Admin-Password") String password,
                               @PathVariable Long teamId, @PathVariable Long problemId) {

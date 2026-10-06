@@ -13,6 +13,8 @@ public class Student {
     @Column(nullable = false)
     private String name;
     private String email;
+    @Column(nullable = false)
+    private boolean leader = false;
     @JsonIgnore
     private String accessPassword;
     @ManyToOne(fetch = FetchType.LAZY)
@@ -26,6 +28,8 @@ public class Student {
     public void setName(String value) { name = value; }
     public String getEmail() { return email; }
     public void setEmail(String value) { email = value; }
+    public boolean isLeader() { return leader; }
+    public void setLeader(boolean value) { leader = value; }
     public String getAccessPassword() { return accessPassword; }
     public void setAccessPassword(String value) { accessPassword = value; }
     public Team getTeam() { return team; }
