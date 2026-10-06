@@ -2,7 +2,7 @@
 import { createRoot } from 'react-dom/client';
 import './styles.css';
 
-const API = import.meta.env.VITE_API_URL || 'http://localhost:8080/api';
+const API = import.meta.env.VITE_API_URL || 'https://vit-hackathon-api.onrender.com/api';
 const SESSION_TTL = 8 * 60 * 60 * 1000;
 
 function readSession(key) {
@@ -242,4 +242,3 @@ function App() {
 }
 
 createRoot(document.getElementById('root')).render(<App />);
-
