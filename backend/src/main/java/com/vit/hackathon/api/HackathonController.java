@@ -16,6 +16,7 @@ import java.io.IOException;
 import java.io.InputStreamReader;
 import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.Collections;
 import java.util.Comparator;
 import java.util.HashMap;
@@ -262,10 +263,13 @@ public class HackathonController {
             for (int i = 0; i < headers.size(); i++) {
                 columns.put(normalize(headers.get(i)), i);
             }
-            Integer representativeColumn = findColumn(columns, "team representative register number");
+            Integer representativeColumn = findColumnAny(columns,
+                    "team representative register number",
+                    "register number roll number of the group leader",
+                    "register number of the group leader");
             if (representativeColumn == null) {
                 throw new ResponseStatusException(HttpStatus.BAD_REQUEST,
-                        "CSV must contain the Team Representative Register Number column");
+                        "CSV must contain the group leader register number column");
             }
             List<Integer> memberColumns = columns.entrySet().stream()
                     .filter(entry -> entry.getKey().contains("member") && entry.getKey().contains("register"))
@@ -299,8 +303,13 @@ public class HackathonController {
                 team.setName(String.format("Team %03d", team.getTeamNumber()));
                 for (int i = 0; i < registers.size(); i++) {
                     Student student = new Student();
-                    student.setName(registers.get(i));
-                    student.setRegisterNumber(registers.get(i));
+                    String register = registers.get(i);
+                    Integer nameColumn = i == 0
+                            ? findColumnContaining(columns, "group leader", "name")
+                            : findColumnContaining(columns, "member " + (i + 1), "name");
+                    String name = nameColumn == null ? "" : valueAt(values, nameColumn);
+                    student.setName(name.isBlank() ? register : name);
+                    student.setRegisterNumber(register);
                     student.setAccessPassword(globalPasswordHash);
                     student.setLeader(i == 0);
                     student.setTeam(team);
@@ -463,6 +472,15 @@ public class HackathonController {
             if (column != null) return column;
         }
         return null;
+    }
+
+    private static Integer findColumnContaining(Map<String, Integer> columns, String... fragments) {
+        return columns.entrySet().stream()
+                .filter(entry -> Arrays.stream(fragments)
+                        .allMatch(fragment -> entry.getKey().contains(normalize(fragment))))
+                .map(Map.Entry::getValue)
+                .findFirst()
+                .orElse(null);
     }
 
     private static String valueAt(List<String> values, int index) {
