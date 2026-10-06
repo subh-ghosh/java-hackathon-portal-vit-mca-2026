@@ -37,11 +37,12 @@ public class HackathonController {
     }
 
     @PostMapping("/student/login")
-    public Team login(@RequestBody LoginRequest request) {
+    public StudentTeamResponse login(@RequestBody LoginRequest request) {
         Student student = students.findByRegisterNumberIgnoreCase(request.registerNumber())
-                .filter(item -> item.getAccessPassword().equals(request.password()))
+                .filter(item -> item.getAccessPassword() != null && item.getAccessPassword().equals(request.password()))
                 .orElseThrow(() -> new ResponseStatusException(HttpStatus.UNAUTHORIZED, "Invalid register number or password"));
-        return teams.findById(student.getTeam().getId()).orElseThrow();
+        Team team = teams.findById(student.getTeam().getId()).orElseThrow();
+        return new StudentTeamResponse(team.getName(), team.getProblem(), team.getStudents());
     }
 
     @GetMapping("/admin/teams")
@@ -153,20 +154,6 @@ public class HackathonController {
         return teams.save(team);
     }
 
-    @PutMapping("/student/submission")
-    public Team submit(@RequestBody SubmissionRequest request) {
-        if (Instant.now().isAfter(deadline)) {
-            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "The submission deadline has passed");
-        }
-        Student student = students.findByRegisterNumberIgnoreCase(request.registerNumber())
-                .filter(item -> item.getAccessPassword().equals(request.password()))
-                .orElseThrow(() -> new ResponseStatusException(HttpStatus.UNAUTHORIZED, "Invalid credentials"));
-        Team team = student.getTeam();
-        team.setGithubUrl(request.githubUrl());
-        team.setDriveUrl(request.driveUrl());
-        return teams.save(team);
-    }
-
     private void requireAdmin(String password) {
         if (password == null || !adminPassword.equals(password)) {
             throw new ResponseStatusException(HttpStatus.UNAUTHORIZED, "Invalid admin password");
@@ -183,8 +170,8 @@ public class HackathonController {
     }
 
     public record LoginRequest(String registerNumber, String password) {}
+    public record StudentTeamResponse(String name, Problem problem, List<Student> students) {}
     public record ProblemRequest(String title, String statement) {}
     public record TeamRequest(String name) {}
     public record StudentRequest(String name, String registerNumber, String email, String accessPassword) {}
-    public record SubmissionRequest(String registerNumber, String password, String githubUrl, String driveUrl) {}
 }

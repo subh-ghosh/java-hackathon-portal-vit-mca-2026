@@ -8,8 +8,8 @@ Full-stack hackathon management portal built with Spring Boot, React, and Postgr
 - Assign one problem statement to multiple teams
 - Student login with VIT register number and access password
 - Shared problem statement for every member of a team
-- GitHub and Google Drive submission links with a deadline
-- Admin view of team assignment and submission status
+- Read-only student view of team members and assigned problem
+- Admin-only team, student, problem, assignment, and submission management
 
 ## Local setup
 

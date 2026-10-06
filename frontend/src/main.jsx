@@ -27,15 +27,8 @@ function Login({ onLogin }) {
     <form className="card login-card" onSubmit={submit}><span className="eyebrow">STUDENT PORTAL</span><h2>Welcome back.</h2><p className="muted">Sign in with the details shared by your coordinator.</p><label>VIT register number<input required value={form.registerNumber} onChange={e => setForm({ ...form, registerNumber: e.target.value })} placeholder="22BCE0001" /></label><label>Access password<input required type="password" value={form.password} onChange={e => setForm({ ...form, password: e.target.value })} placeholder="••••••••" /></label>{error && <div className="error">{error}</div>}<button>Enter team space <span>→</span></button></form></main>;
 }
 
-function Student({ team, credentials, logout }) {
-  const [links, setLinks] = useState({ githubUrl: team.githubUrl || '', driveUrl: team.driveUrl || '' });
-  const [message, setMessage] = useState('');
-  async function submit(e) {
-    e.preventDefault();
-    try { await request('/student/submission', { method: 'PUT', body: JSON.stringify({ ...links, ...credentials }) }); setMessage('Submission saved successfully.'); }
-    catch (error) { setMessage(error.message); }
-  }
-  return <main className="app-shell"><header><div className="brand">VIT <span>HACKATHON</span></div><button className="ghost" onClick={logout}>Sign out</button></header><div className="content"><div className="welcome"><span className="eyebrow">TEAM SPACE</span><h1>{team.name}</h1><p className="muted">Your entire team sees the same challenge. Make it count.</p></div><div className="student-grid"><section className="card problem-card"><div className="card-top"><span className="eyebrow">PROBLEM {team.problem ? `#${team.problem.id}` : ''}</span><span className="pill">{team.problem ? 'Assigned' : 'Pending'}</span></div>{team.problem ? <><h2>{team.problem.title}</h2><p>{team.problem.statement}</p></> : <div className="empty">Your coordinator has not assigned a problem yet.</div>}<h3>Team members</h3><div className="members">{team.students.map(s => <div className="member" key={s.registerNumber}><span>{s.name.charAt(0)}</span><div><b>{s.name}</b><small>{s.registerNumber}</small></div></div>)}</div></section><form className="card submission-card" onSubmit={submit}><span className="eyebrow">FINAL SUBMISSION</span><h2>Ship your work.</h2><p className="muted">Both links are visible to the admin after you save.</p><label>GitHub repository URL<input type="url" required value={links.githubUrl} onChange={e => setLinks({ ...links, githubUrl: e.target.value })} placeholder="https://github.com/team/project" /></label><label>Google Drive document URL<input type="url" required value={links.driveUrl} onChange={e => setLinks({ ...links, driveUrl: e.target.value })} placeholder="https://drive.google.com/..." /></label>{message && <div className={message.includes('success') ? 'success' : 'error'}>{message}</div>}<button>Save submission <span>→</span></button></form></div></div></main>;
+function Student({ team, logout }) {
+  return <main className="app-shell"><header><div className="brand">VIT <span>HACKATHON</span></div><button className="ghost" onClick={logout}>Sign out</button></header><div className="content"><div className="welcome"><span className="eyebrow">READ-ONLY TEAM SPACE</span><h1>{team.name}</h1><p className="muted">Your coordinator has shared the details below. Only admins can change teams and assignments.</p></div><div className="student-grid"><section className="card problem-card"><div className="card-top"><span className="eyebrow">YOUR PROBLEM {team.problem ? `#${team.problem.id}` : ''}</span><span className="pill">{team.problem ? 'Assigned' : 'Pending'}</span></div>{team.problem ? <><h2>{team.problem.title}</h2><p>{team.problem.statement}</p></> : <div className="empty">Your coordinator has not assigned a problem yet.</div>}<h3>Team members</h3><div className="members">{team.students.map(s => <div className="member" key={s.registerNumber}><span>{s.name.charAt(0)}</span><div><b>{s.name}</b><small>{s.registerNumber}</small></div></div>)}</div></section></div></div></main>;
 }
 
 const emptyStudent = { name: '', registerNumber: '', email: '', accessPassword: '' };
@@ -125,7 +118,7 @@ function Admin() {
 function App() {
   const [mode, setMode] = useState(location.hash === '#admin' ? 'admin' : 'student');
   const [session, setSession] = useState(null);
-  return <>{mode === 'admin' ? <Admin /> : session ? <Student team={session.team} credentials={session.credentials} logout={() => setSession(null)} /> : <Login onLogin={(team, credentials) => setSession({ team, credentials })} />}<button className="mode-switch" onClick={() => { setMode(mode === 'admin' ? 'student' : 'admin'); setSession(null); }}>{mode === 'admin' ? 'Student login' : 'Admin dashboard'}</button></>;
+  return <>{mode === 'admin' ? <Admin /> : session ? <Student team={session.team} logout={() => setSession(null)} /> : <Login onLogin={(team) => setSession({ team })} />}<button className="mode-switch" onClick={() => { setMode(mode === 'admin' ? 'student' : 'admin'); setSession(null); }}>{mode === 'admin' ? 'Student login' : 'Admin dashboard'}</button></>;
 }
 
 createRoot(document.getElementById('root')).render(<App />);
