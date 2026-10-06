@@ -7,7 +7,7 @@ const SESSION_TTL = 8 * 60 * 60 * 1000;
 
 function readSession(key) {
   try {
-    const value = JSON.parse(localStorage.getItem(key) || 'null');
+    const value = JSON.parse(sessionStorage.getItem(key) || 'null');
     if (!value?.expiresAt) return null;
     return value.expiresAt > Date.now() ? value : { expired: true };
   } catch {
@@ -16,11 +16,11 @@ function readSession(key) {
 }
 
 function saveSession(key, value) {
-  localStorage.setItem(key, JSON.stringify({ ...value, expiresAt: Date.now() + SESSION_TTL }));
+  sessionStorage.setItem(key, JSON.stringify({ ...value, expiresAt: Date.now() + SESSION_TTL }));
 }
 
 function clearSession(key) {
-  localStorage.removeItem(key);
+  sessionStorage.removeItem(key);
 }
 
 async function request(path, options = {}) {
@@ -76,7 +76,7 @@ function Admin() {
     return () => window.clearTimeout(timeout);
   }, [notice]);
   useEffect(() => {
-    if (!authed && localStorage.getItem('hackathon-admin-session')) clearSession('hackathon-admin-session');
+    if (!authed && sessionStorage.getItem('hackathon-admin-session')) clearSession('hackathon-admin-session');
   }, [authed]);
   useEffect(() => {
     if (sessionExpired) setNotice('Your admin session expired. Sign in again. Use Sign out to clear the saved session.');
