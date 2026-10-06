@@ -19,14 +19,17 @@ public class HackathonController {
     private final TeamRepository teams;
     private final StudentRepository students;
     private final ProblemRepository problems;
+    private final AppSettingRepository settings;
     private final String adminPassword;
     private final PasswordEncoder passwordEncoder = new BCryptPasswordEncoder();
 
     public HackathonController(TeamRepository teams, StudentRepository students, ProblemRepository problems,
+                               AppSettingRepository settings,
                                @Value("${app.admin.password}") String adminPassword) {
         this.teams = teams;
         this.students = students;
         this.problems = problems;
+        this.settings = settings;
         this.adminPassword = adminPassword;
     }
 
@@ -54,6 +57,28 @@ public class HackathonController {
     public List<Problem> listProblems(@RequestHeader("X-Admin-Password") String password) {
         requireAdmin(password);
         return problems.findAll();
+    }
+
+    @GetMapping("/admin/access-password")
+    public Map<String, Boolean> accessPasswordStatus(@RequestHeader("X-Admin-Password") String password) {
+        requireAdmin(password);
+        return Map.of("configured", settings.findById("student-access-password").isPresent());
+    }
+
+    @PutMapping("/admin/access-password")
+    public Map<String, Boolean> updateAccessPassword(@RequestHeader("X-Admin-Password") String password,
+                                                      @RequestBody AccessPasswordRequest request) {
+        requireAdmin(password);
+        if (request.password() == null || request.password().isBlank()) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Access password cannot be blank");
+        }
+        String hash = passwordEncoder.encode(request.password());
+        settings.save(new AppSetting("student-access-password", hash));
+        students.findAll().forEach(student -> {
+            student.setAccessPassword(hash);
+            students.save(student);
+        });
+        return Map.of("configured", true);
     }
 
     @PostMapping("/admin/problems")
@@ -114,8 +139,12 @@ public class HackathonController {
                            @PathVariable Long teamId, @RequestBody StudentRequest request) {
         requireAdmin(password);
         Team team = teams.findById(teamId).orElseThrow();
+        String globalPasswordHash = settings.findById("student-access-password")
+                .orElseThrow(() -> new ResponseStatusException(HttpStatus.BAD_REQUEST, "Set the global student access password first"))
+                .getValue();
         Student student = new Student();
         applyStudent(student, request);
+        student.setAccessPassword(globalPasswordHash);
         student.setTeam(team);
         team.getStudents().add(student);
         return teams.save(team);
@@ -188,14 +217,14 @@ public class HackathonController {
         student.setName(request.name());
         student.setRegisterNumber(request.registerNumber());
         student.setEmail(request.email());
-        if (request.accessPassword() != null && !request.accessPassword().isBlank()) {
-            student.setAccessPassword(passwordEncoder.encode(request.accessPassword()));
-        }
+        settings.findById("student-access-password")
+                .ifPresent(setting -> student.setAccessPassword(setting.getValue()));
     }
 
     public record LoginRequest(String registerNumber, String password) {}
     public record StudentTeamResponse(String name, Problem problem, List<Student> students) {}
     public record ProblemRequest(String title, String statement) {}
+    public record AccessPasswordRequest(String password) {}
     public record TeamRequest(String name) {}
     public record StudentRequest(String name, String registerNumber, String email, String accessPassword) {}
 }

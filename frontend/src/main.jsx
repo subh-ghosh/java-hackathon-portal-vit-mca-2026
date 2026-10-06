@@ -31,7 +31,7 @@ function Student({ team, logout }) {
   return <main className="app-shell"><header><div className="brand">VIT <span>HACKATHON</span></div><button className="ghost" onClick={logout}>Sign out</button></header><div className="content"><div className="welcome"><span className="eyebrow">READ-ONLY TEAM SPACE</span><h1>{team.name}</h1><p className="muted">Your coordinator has shared the details below. Only admins can change teams and assignments.</p></div><div className="student-grid"><section className="card problem-card"><div className="card-top"><span className="eyebrow">YOUR PROBLEM {team.problem ? `#${team.problem.id}` : ''}</span><span className="pill">{team.problem ? 'Assigned' : 'Pending'}</span></div>{team.problem ? <><h2>{team.problem.title}</h2><p>{team.problem.statement}</p></> : <div className="empty">Your coordinator has not assigned a problem yet.</div>}<h3>Team members</h3><div className="members">{team.students.map(s => <div className="member" key={s.registerNumber}><span>{s.name.charAt(0)}</span><div><b>{s.name}</b><small>{s.registerNumber}</small></div></div>)}</div></section></div></div></main>;
 }
 
-const emptyStudent = { name: '', registerNumber: '', email: '', accessPassword: '' };
+const emptyStudent = { name: '', registerNumber: '', email: '' };
 
 function Admin() {
   const [password, setPassword] = useState('');
@@ -43,6 +43,7 @@ function Admin() {
   const [newProblem, setNewProblem] = useState({ title: '', statement: '' });
   const [editingProblem, setEditingProblem] = useState(null);
   const [editingTeam, setEditingTeam] = useState(null);
+  const [globalAccessPassword, setGlobalAccessPassword] = useState('');
   const [notice, setNotice] = useState('');
   const headers = () => ({ 'X-Admin-Password': password });
   useEffect(() => {
@@ -52,11 +53,20 @@ function Admin() {
   }, [notice]);
   async function load() {
     const authHeaders = headers();
-    const [loadedTeams, loadedProblems] = await Promise.all([
+    const [loadedTeams, loadedProblems, passwordStatus] = await Promise.all([
       request('/admin/teams', { headers: authHeaders }),
-      request('/admin/problems', { headers: authHeaders })
+      request('/admin/problems', { headers: authHeaders }),
+      request('/admin/access-password', { headers: authHeaders })
     ]);
     setTeams(loadedTeams); setProblems(loadedProblems); setAuthed(true);
+    if (!passwordStatus.configured) setNotice('Set the global student access password before adding students.');
+  }
+  async function saveGlobalAccessPassword(e) {
+    e.preventDefault();
+    const nextPassword = e._password || globalAccessPassword;
+    await request('/admin/access-password', { method: 'PUT', headers: headers(), body: JSON.stringify({ password: nextPassword }) });
+    setGlobalAccessPassword('');
+    setNotice('Global student access password updated.');
   }
   async function createTeam(e) {
     e.preventDefault();
@@ -77,12 +87,13 @@ function Admin() {
   async function addStudent(e, teamId) {
     e.preventDefault();
     const updated = await request(`/admin/teams/${teamId}/students`, { method: 'POST', headers: headers(), body: JSON.stringify(student) });
-    setTeams(teams.map(team => team.id === teamId ? updated : team)); setStudent(emptyStudent); setNotice('Student added.');
+    setTeams(teams.map(team => team.id === teamId ? updated : team)); setEditingTeam(updated); setStudent(emptyStudent); setNotice('Student added.');
   }
   async function deleteStudent(id) {
     if (!confirm('Delete this student?')) return;
     await request(`/admin/students/${id}`, { method: 'DELETE', headers: headers() });
     setTeams(teams.map(team => ({ ...team, students: team.students.filter(item => item.id !== id) })));
+    setEditingTeam(current => current ? { ...current, students: current.students.filter(item => item.id !== id) } : current);
   }
   async function assignLeader(studentId) {
     const updated = await request(`/admin/students/${studentId}/leader`, { method: 'PUT', headers: headers() });
@@ -96,13 +107,13 @@ function Admin() {
     const registerNumber = prompt('Register number', item.registerNumber);
     if (!registerNumber) return;
     const email = prompt('Email', item.email || '') || '';
-    const accessPassword = prompt('New access password, or leave blank to keep current', '');
     const updated = await request(`/admin/students/${item.id}`, {
       method: 'PUT',
       headers: headers(),
-      body: JSON.stringify({ name, registerNumber, email, accessPassword })
+      body: JSON.stringify({ name, registerNumber, email })
     });
     setTeams(teams.map(team => ({ ...team, students: team.students.map(student => student.id === updated.id ? updated : student) })));
+    setEditingTeam(current => current ? { ...current, students: current.students.map(student => student.id === updated.id ? updated : student) } : current);
     setNotice('Student updated.');
   }
   async function saveProblem(e) {
@@ -124,7 +135,7 @@ function Admin() {
     setTeams(teams.map(team => team.id === teamId ? updated : team)); setNotice('Problem assigned.');
   }
   if (!authed) return <main className="login-shell admin-login"><form className="card login-card" onSubmit={e => { e.preventDefault(); load().catch(err => setNotice(err.message)); }}><span className="eyebrow">COORDINATOR DASHBOARD</span><h2>Admin access.</h2><p className="muted">Manage teams, students, and challenges one by one.</p><label>Admin password<input type="password" required value={password} onChange={e => setPassword(e.target.value)} /></label>{notice && <div className="error">{notice}</div>}<button>Open dashboard <span>→</span></button></form></main>;
-  return <main className="app-shell"><header><div className="brand">VIT <span>HACKATHON</span></div><button className="ghost" onClick={() => setAuthed(false)}>Sign out</button></header><div className="content"><div className="welcome"><span className="eyebrow">COORDINATOR DASHBOARD</span><h1>Command center</h1><p className="muted">Create teams and members individually, then assign problem statements.</p></div>{notice && <div className="success">{notice}</div>}<div className="admin-actions"><form className="card inline-form" onSubmit={createTeam}><span className="eyebrow">NEW TEAM</span><input required placeholder="Team name" value={teamName} onChange={e => setTeamName(e.target.value)} /><button>Create team</button></form><form className="card problem-form" onSubmit={saveProblem}><span className="eyebrow">{editingProblem ? 'EDIT PROBLEM' : 'NEW PROBLEM'}</span><input required placeholder="Problem title" value={newProblem.title} onChange={e => setNewProblem({ ...newProblem, title: e.target.value })} /><textarea required placeholder="Problem statement" value={newProblem.statement} onChange={e => setNewProblem({ ...newProblem, statement: e.target.value })} /><button>{editingProblem ? 'Save changes' : 'Add problem'}</button></form></div><section className="card table-card"><div className="card-top"><div><span className="eyebrow">PROBLEM LIBRARY</span><h2>Problem statements</h2></div><span className="pill">{problems.length} problems</span></div><div className="problem-list">{problems.map(problem => <div className="problem-row" key={problem.id}><div><b>#{problem.id} · {problem.title}</b><p>{problem.statement}</p></div><div className="row-actions"><button className="small-button" onClick={() => { setEditingProblem(problem); setNewProblem({ title: problem.title, statement: problem.statement }); }}>Edit</button><button className="small-button danger-button" onClick={() => deleteProblem(problem.id)}>Delete</button></div></div>)}</div></section><section className="card table-card"><div className="card-top"><div><span className="eyebrow">TEAM ROSTER</span><h2>Teams and assignments</h2></div><span className="pill">{teams.length} teams</span></div><div className="table-wrap"><table><thead><tr><th>Team</th><th>Members</th><th>Problem</th><th>Actions</th></tr></thead><tbody>{teams.map(team => <tr key={team.id}><td><b>{team.name}</b></td><td>{team.students.length}</td><td><select value={team.problem?.id || ''} onChange={e => assign(team.id, e.target.value)}><option value="">Unassigned</option>{problems.map(p => <option key={p.id} value={p.id}>{p.id} · {p.title}</option>)}</select></td>  <td><button className="small-button" onClick={() => setEditingTeam(team)}>Edit members</button><button className="small-button" onClick={() => renameTeam(team)}>Rename</button><button className="small-button danger-button" onClick={() => deleteTeam(team.id)}>Delete</button></td></tr>)}</tbody></table></div></section>{teams.map(team => <section className="card team-card" key={team.id}><div className="card-top"><div><span className="eyebrow">TEAM MEMBERS</span><h2>{team.name}</h2></div><span className="pill">{team.students.length} members</span></div><div className="members admin-members">{team.students.map(item => <div className="member" key={item.id}><span>{item.name.charAt(0)}</span><div><b>{item.name}</b><small>{item.registerNumber} · {item.email}</small></div>  <button className="small-button" onClick={() => editStudent(item)}>Edit</button><button className="small-button danger-button" onClick={() => deleteStudent(item.id)}>Remove</button></div>)}</div><form className="student-form" onSubmit={e => addStudent(e, team.id)}><input required placeholder="Student name" value={student.name} onChange={e => setStudent({ ...student, name: e.target.value })} /><input required placeholder="Register number" value={student.registerNumber} onChange={e => setStudent({ ...student, registerNumber: e.target.value })} /><input type="email" placeholder="Email" value={student.email} onChange={e => setStudent({ ...student, email: e.target.value })} /><input required placeholder="Access password" value={student.accessPassword} onChange={e => setStudent({ ...student, accessPassword: e.target.value })} /><button>Add member</button></form></section>)}</div>{editingTeam && <div className="modal-backdrop" onClick={() => setEditingTeam(null)}><section className="member-modal card" onClick={e => e.stopPropagation()}><div className="card-top"><div><span className="eyebrow">EDIT MEMBERS</span><h2>{editingTeam.name}</h2></div><button type="button" className="ghost" onClick={() => setEditingTeam(null)}>Close</button></div>{editingTeam.students.length === 0 ? <div className="empty">No members in this team yet.</div> : <div className="modal-member-list">{editingTeam.students.map(item => <div className="modal-member" key={item.id}><div><b>{item.name}</b><small>{item.registerNumber} · {item.email || 'No email'}{item.leader ? ' · Leader' : ''}</small></div><div className="row-actions">{!item.leader && <button type="button" className="small-button" onClick={() => assignLeader(item.id)}>Assign as leader</button>}<button type="button" className="small-button" onClick={() => editStudent(item)}>Edit</button><button type="button" className="small-button danger-button" onClick={() => deleteStudent(item.id)}>Remove</button></div></div>)}</div>}</section></div>}</main>;
+  return <main className="app-shell">  <header><div className="brand">VIT <span>HACKATHON</span></div><div className="header-actions"><button className="ghost" onClick={() => { const next = prompt('Global student access password'); if (next) saveGlobalAccessPassword({ preventDefault: () => {}, target: null, _password: next }); }}>Set access password</button><button className="ghost" onClick={() => setAuthed(false)}>Sign out</button></div></header><div className="content"><div className="welcome"><span className="eyebrow">COORDINATOR DASHBOARD</span><h1>Command center</h1><p className="muted">Create teams and members individually, then assign problem statements.</p></div>{notice && <div className="success">{notice}</div>}<div className="admin-actions"><form className="card inline-form" onSubmit={createTeam}><span className="eyebrow">NEW TEAM</span><input required placeholder="Team name" value={teamName} onChange={e => setTeamName(e.target.value)} /><button>Create team</button></form><form className="card problem-form" onSubmit={saveProblem}><span className="eyebrow">{editingProblem ? 'EDIT PROBLEM' : 'NEW PROBLEM'}</span><input required placeholder="Problem title" value={newProblem.title} onChange={e => setNewProblem({ ...newProblem, title: e.target.value })} /><textarea required placeholder="Problem statement" value={newProblem.statement} onChange={e => setNewProblem({ ...newProblem, statement: e.target.value })} /><button>{editingProblem ? 'Save changes' : 'Add problem'}</button></form></div><section className="card table-card"><div className="card-top"><div><span className="eyebrow">PROBLEM LIBRARY</span><h2>Problem statements</h2></div><span className="pill">{problems.length} problems</span></div><div className="problem-list">{problems.map(problem => <div className="problem-row" key={problem.id}><div><b>#{problem.id} · {problem.title}</b><p>{problem.statement}</p></div><div className="row-actions"><button className="small-button" onClick={() => { setEditingProblem(problem); setNewProblem({ title: problem.title, statement: problem.statement }); }}>Edit</button><button className="small-button danger-button" onClick={() => deleteProblem(problem.id)}>Delete</button></div></div>)}</div></section><section className="card table-card"><div className="card-top"><div><span className="eyebrow">TEAM ROSTER</span><h2>Teams and assignments</h2></div><span className="pill">{teams.length} teams</span></div><div className="table-wrap"><table><thead><tr><th>Team</th><th>Members</th><th>Problem</th><th>Actions</th></tr></thead><tbody>{teams.map(team => <tr key={team.id}><td><b>{team.name}</b></td><td>{team.students.length}</td><td><select value={team.problem?.id || ''} onChange={e => assign(team.id, e.target.value)}><option value="">Unassigned</option>{problems.map(p => <option key={p.id} value={p.id}>{p.id} · {p.title}</option>)}</select></td><td><button className="small-button" onClick={() => setEditingTeam(team)}>Edit members</button><button className="small-button" onClick={() => renameTeam(team)}>Rename</button><button className="small-button danger-button" onClick={() => deleteTeam(team.id)}>Delete</button></td></tr>)}</tbody></table></div></section></div>{editingTeam && <div className="modal-backdrop" onClick={() => setEditingTeam(null)}><section className="member-modal card" onClick={e => e.stopPropagation()}><div className="card-top"><div><span className="eyebrow">EDIT MEMBERS</span><h2>{editingTeam.name}</h2></div><button type="button" className="ghost" onClick={() => setEditingTeam(null)}>Close</button></div><form className="student-form modal-student-form" onSubmit={e => addStudent(e, editingTeam.id)}><input required placeholder="Student name" value={student.name} onChange={e => setStudent({ ...student, name: e.target.value })} /><input required placeholder="Register number" value={student.registerNumber} onChange={e => setStudent({ ...student, registerNumber: e.target.value })} /><input type="email" placeholder="Email" value={student.email} onChange={e => setStudent({ ...student, email: e.target.value })} />  <button>Add member</button></form>{editingTeam.students.length === 0 ? <div className="empty">No members in this team yet.</div> : <div className="modal-member-list">{editingTeam.students.map(item => <div className="modal-member" key={item.id}><div><b>{item.name}</b><small>{item.registerNumber} · {item.email || 'No email'}{item.leader ? ' · Leader' : ''}</small></div><div className="row-actions">{!item.leader && <button type="button" className="small-button" onClick={() => assignLeader(item.id)}>Assign as leader</button>}<button type="button" className="small-button" onClick={() => editStudent(item)}>Edit</button><button type="button" className="small-button danger-button" onClick={() => deleteStudent(item.id)}>Remove</button></div></div>)}</div>}</section></div>}</main>;
 }
 
 function App() {
