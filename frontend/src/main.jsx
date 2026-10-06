@@ -75,23 +75,25 @@ function Admin() {
   async function importTeams(e) {
     e.preventDefault();
     if (!csvFile) return setNotice('Choose a CSV file first.');
+    const form = e.currentTarget;
     const formData = new FormData();
     formData.append('file', csvFile);
     const imported = await request('/admin/teams/import', { method: 'POST', headers: headers(), body: formData });
     setTeams([...teams, ...imported]);
     setCsvFile(null);
-    e.currentTarget.reset();
+    form.reset();
     setNotice(`${imported.length} teams imported.`);
   }
   async function importQuestions(e) {
     e.preventDefault();
     if (!questionCsvFile) return setNotice('Choose a question CSV file first.');
+    const form = e.currentTarget;
     const formData = new FormData();
     formData.append('file', questionCsvFile);
     const imported = await request('/admin/problems/import', { method: 'POST', headers: headers(), body: formData });
     setProblems([...problems, ...imported]);
     setQuestionCsvFile(null);
-    e.currentTarget.reset();
+    form.reset();
     setNotice(`${imported.length} questions imported.`);
   }
   async function randomlyAssignQuestions() {
