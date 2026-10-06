@@ -9,3 +9,12 @@
 @media(max-width:1200px){.admin-actions{grid-template-columns:1fr 1fr}}
 @media(max-width:800px){.login-shell{display:block}.hero{padding:60px 9vw}.hero h1{font-size:3.6rem}.stat-row{margin-top:35px;gap:20px}.login-card{margin:0;border-radius:0;max-width:none}.student-grid,.admin-actions{grid-template-columns:1fr}.welcome h1{font-size:2.6rem}.content{padding:45px 5vw}.problem-form{display:block}.problem-form>*{margin-bottom:10px}.problem-form button{margin-top:6px}}
 @media(max-width:600px){.modal-backdrop{padding:12px}.member-modal{padding:24px 18px}.modal-student-form{grid-template-columns:1fr}.modal-student-form button{grid-column:auto}.modal-member{display:block}.modal-member .row-actions{margin-top:12px;justify-content:flex-start}}
+
+.admin-actions>.card{min-width:0}
+.inline-form{grid-template-columns:minmax(0,1fr)}
+.inline-form button{width:100%}
+.csv-form input{min-width:0;max-width:100%}
+.problem-form{display:flex;flex-direction:column;align-items:stretch}
+.problem-form input,.problem-form textarea{width:100%}
+.problem-form textarea{height:100px}
+.problem-form button{width:100%}
