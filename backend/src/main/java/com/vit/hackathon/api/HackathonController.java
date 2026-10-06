@@ -89,7 +89,7 @@ public class HackathonController {
         }
         int imported = 0;
         try (var reader = new InputStreamReader(file.getInputStream(), StandardCharsets.UTF_8);
-             CSVParser parser = CSVFormat.DEFAULT.builder().setHeader().setSkipHeaderRecord(true).get().parse(reader)) {
+             CSVParser parser = CSVFormat.DEFAULT.builder().setHeader().setSkipHeaderRecord(true).build().parse(reader)) {
             for (CSVRecord row : parser) {
                 Team team = teams.findByNameIgnoreCase(row.get("teamName")).orElseGet(Team::new);
                 team.setName(row.get("teamName").trim());
