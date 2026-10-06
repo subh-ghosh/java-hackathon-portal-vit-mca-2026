@@ -95,10 +95,15 @@ function Admin() {
     setNotice(`${imported.length} questions imported.`);
   }
   async function randomlyAssignQuestions() {
-    if (!confirm('Randomly assign questions to all teams? Existing assignments will be replaced.')) return;
+    const unassignedCount = teams.filter(team => !team.problem).length;
+    if (!unassignedCount) {
+      setNotice('All teams already have questions assigned.');
+      return;
+    }
+    if (!confirm(`Assign questions to ${unassignedCount} unassigned team${unassignedCount === 1 ? '' : 's'}? Existing assignments will be kept.`)) return;
     const assigned = await request('/admin/teams/random-assignment', { method: 'PUT', headers: headers() });
     setTeams(assigned);
-    setNotice('Questions distributed evenly across all teams.');
+    setNotice('Questions assigned evenly to the teams that were still unassigned.');
   }
   async function deleteTeam(id) {
     if (!confirm('Delete this team and all its students?')) return;

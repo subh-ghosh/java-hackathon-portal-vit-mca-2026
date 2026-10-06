@@ -16,11 +16,13 @@ import java.io.InputStreamReader;
 import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.Collections;
+import java.util.Comparator;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Locale;
 import java.util.Objects;
+import java.util.stream.Collectors;
 
 @RestController
 @RequestMapping("/api")
@@ -174,10 +176,26 @@ public class HackathonController {
         if (allTeams.isEmpty() || allProblems.isEmpty()) {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Create at least one team and one question first");
         }
-        Collections.shuffle(allTeams);
+        List<Team> unassignedTeams = allTeams.stream()
+                .filter(team -> team.getProblem() == null)
+                .collect(Collectors.toCollection(ArrayList::new));
+        if (unassignedTeams.isEmpty()) {
+            return allTeams;
+        }
+        Map<Long, Integer> usage = new HashMap<>();
+        allProblems.forEach(problem -> usage.put(problem.getId(), 0));
+        allTeams.stream()
+                .map(Team::getProblem)
+                .filter(Objects::nonNull)
+                .forEach(problem -> usage.computeIfPresent(problem.getId(), (id, count) -> count + 1));
+        Collections.shuffle(unassignedTeams);
         Collections.shuffle(allProblems);
-        for (int i = 0; i < allTeams.size(); i++) {
-            allTeams.get(i).setProblem(allProblems.get(i % allProblems.size()));
+        for (Team team : unassignedTeams) {
+            Problem leastUsed = allProblems.stream()
+                    .min(Comparator.comparingInt(problem -> usage.get(problem.getId())))
+                    .orElseThrow();
+            team.setProblem(leastUsed);
+            usage.computeIfPresent(leastUsed.getId(), (id, count) -> count + 1);
         }
         return teams.saveAll(allTeams);
     }
