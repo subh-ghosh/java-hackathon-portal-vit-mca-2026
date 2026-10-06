@@ -8,9 +8,18 @@ import org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.web.bind.annotation.*;
 import org.springframework.web.server.ResponseStatusException;
+import org.springframework.web.multipart.MultipartFile;
 
+import java.io.BufferedReader;
+import java.io.IOException;
+import java.io.InputStreamReader;
+import java.nio.charset.StandardCharsets;
+import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Locale;
+import java.util.Objects;
 
 @RestController
 @RequestMapping("/api")
@@ -33,6 +42,13 @@ public class HackathonController {
         this.adminPassword = adminPassword;
     }
 
+    private void ensureTeamNumber(Team team) {
+        if (team.getTeamNumber() == null) {
+            team.setTeamNumber(nextTeamNumber());
+            teams.save(team);
+        }
+    }
+
     @GetMapping("/public/config")
     public Map<String, Object> config() {
         return Map.of("teamCount", teams.count(), "studentCount", students.count());
@@ -44,13 +60,22 @@ public class HackathonController {
                 .filter(item -> verifyStudentPassword(item, request.password()))
                 .orElseThrow(() -> new ResponseStatusException(HttpStatus.UNAUTHORIZED, "Invalid register number or password"));
         Team team = teams.findById(student.getTeam().getId()).orElseThrow();
-        return new StudentTeamResponse(team.getName(), team.getProblem(), team.getStudents());
+        ensureTeamNumber(team);
+        String leaderRegisterNumber = team.getStudents().stream()
+                .filter(Student::isLeader)
+                .map(Student::getRegisterNumber)
+                .findFirst()
+                .orElse(null);
+        return new StudentTeamResponse(team.getName(), team.getTeamNumber(), student.getRegisterNumber(),
+                leaderRegisterNumber, team.getProblem(), team.getStudents());
     }
 
     @GetMapping("/admin/teams")
     public List<Team> listTeams(@RequestHeader("X-Admin-Password") String password) {
         requireAdmin(password);
-        return teams.findAll();
+        List<Team> allTeams = teams.findAll();
+        allTeams.forEach(this::ensureTeamNumber);
+        return allTeams;
     }
 
     @GetMapping("/admin/problems")
@@ -116,7 +141,82 @@ public class HackathonController {
         requireAdmin(password);
         Team team = new Team();
         team.setName(request.name());
+        team.setTeamNumber(nextTeamNumber());
         return teams.save(team);
+    }
+
+    @PostMapping("/admin/teams/import")
+    public List<Team> importTeams(@RequestHeader("X-Admin-Password") String password,
+                                  @RequestPart("file") MultipartFile file) {
+        requireAdmin(password);
+        if (file.isEmpty()) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "CSV file is empty");
+        }
+        String globalPasswordHash = settings.findById("student-access-password")
+                .orElseThrow(() -> new ResponseStatusException(HttpStatus.BAD_REQUEST,
+                        "Set the global student access password first"))
+                .getValue();
+        try (BufferedReader reader = new BufferedReader(new InputStreamReader(
+                file.getInputStream(), StandardCharsets.UTF_8))) {
+            String headerLine = reader.readLine();
+            if (headerLine == null) {
+                throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "CSV file has no header");
+            }
+            List<String> headers = parseCsvLine(headerLine);
+            Map<String, Integer> columns = new HashMap<>();
+            for (int i = 0; i < headers.size(); i++) {
+                columns.put(normalize(headers.get(i)), i);
+            }
+            Integer representativeColumn = findColumn(columns, "team representative register number");
+            if (representativeColumn == null) {
+                throw new ResponseStatusException(HttpStatus.BAD_REQUEST,
+                        "CSV must contain the Team Representative Register Number column");
+            }
+            List<Integer> memberColumns = columns.entrySet().stream()
+                    .filter(entry -> entry.getKey().contains("member") && entry.getKey().contains("register"))
+                    .map(Map.Entry::getValue)
+                    .sorted()
+                    .toList();
+            if (memberColumns.isEmpty()) {
+                throw new ResponseStatusException(HttpStatus.BAD_REQUEST,
+                        "CSV must contain at least one member register number column");
+            }
+            List<Team> imported = new ArrayList<>();
+            String line;
+            int rowNumber = 1;
+            while ((line = reader.readLine()) != null) {
+                rowNumber++;
+                if (line.isBlank()) continue;
+                List<String> values = parseCsvLine(line);
+                String leaderRegister = valueAt(values, representativeColumn);
+                if (isIgnoredRegister(leaderRegister)) {
+                    throw new ResponseStatusException(HttpStatus.BAD_REQUEST,
+                            "Missing representative register number on CSV row " + rowNumber);
+                }
+                List<String> registers = new ArrayList<>();
+                registers.add(leaderRegister);
+                for (Integer column : memberColumns) {
+                    String register = valueAt(values, column);
+                    if (!isIgnoredRegister(register) && !registers.contains(register)) registers.add(register);
+                }
+                Team team = new Team();
+                team.setTeamNumber(nextTeamNumber());
+                team.setName(String.format("Team %03d", team.getTeamNumber()));
+                for (int i = 0; i < registers.size(); i++) {
+                    Student student = new Student();
+                    student.setName(registers.get(i));
+                    student.setRegisterNumber(registers.get(i));
+                    student.setAccessPassword(globalPasswordHash);
+                    student.setLeader(i == 0);
+                    student.setTeam(team);
+                    team.getStudents().add(student);
+                }
+                imported.add(teams.save(team));
+            }
+            return imported;
+        } catch (IOException exception) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Could not read CSV file", exception);
+        }
     }
 
     @PutMapping("/admin/teams/{teamId}")
@@ -222,9 +322,63 @@ public class HackathonController {
     }
 
     public record LoginRequest(String registerNumber, String password) {}
-    public record StudentTeamResponse(String name, Problem problem, List<Student> students) {}
+    public record StudentTeamResponse(String name, Integer teamNumber, String ownRegisterNumber,
+                                      String leaderRegisterNumber, Problem problem, List<Student> students) {}
     public record ProblemRequest(String title, String statement) {}
     public record AccessPasswordRequest(String password) {}
     public record TeamRequest(String name) {}
     public record StudentRequest(String name, String registerNumber, String email, String accessPassword) {}
+
+    private int nextTeamNumber() {
+        return teams.findAll().stream()
+                .map(Team::getTeamNumber)
+                .filter(Objects::nonNull)
+                .max(Integer::compareTo)
+                .orElse(0) + 1;
+    }
+
+    private static Integer findColumn(Map<String, Integer> columns, String expected) {
+        String normalizedExpected = normalize(expected);
+        return columns.entrySet().stream()
+                .filter(entry -> entry.getKey().equals(normalizedExpected))
+                .map(Map.Entry::getValue)
+                .findFirst()
+                .orElse(null);
+    }
+
+    private static String valueAt(List<String> values, int index) {
+        return index < values.size() ? values.get(index).trim() : "";
+    }
+
+    private static boolean isIgnoredRegister(String value) {
+        return value == null || value.isBlank() || value.trim().equalsIgnoreCase("NA");
+    }
+
+    private static String normalize(String value) {
+        return value == null ? "" : value.trim().toLowerCase(Locale.ROOT).replaceAll("[^a-z0-9]+", " ").trim();
+    }
+
+    private static List<String> parseCsvLine(String line) {
+        List<String> values = new ArrayList<>();
+        StringBuilder current = new StringBuilder();
+        boolean quoted = false;
+        for (int i = 0; i < line.length(); i++) {
+            char character = line.charAt(i);
+            if (character == '"') {
+                if (quoted && i + 1 < line.length() && line.charAt(i + 1) == '"') {
+                    current.append('"');
+                    i++;
+                } else {
+                    quoted = !quoted;
+                }
+            } else if (character == ',' && !quoted) {
+                values.add(current.toString());
+                current.setLength(0);
+            } else {
+                current.append(character);
+            }
+        }
+        values.add(current.toString());
+        return values;
+    }
 }

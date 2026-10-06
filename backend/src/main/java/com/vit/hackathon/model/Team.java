@@ -11,6 +11,8 @@ public class Team {
     private Long id;
     @Column(nullable = false, unique = true)
     private String name;
+    @Column(unique = true)
+    private Integer teamNumber;
     @ManyToOne(fetch = FetchType.EAGER)
     private Problem problem;
     @OneToMany(mappedBy = "team", cascade = CascadeType.ALL, orphanRemoval = true, fetch = FetchType.EAGER)
@@ -18,6 +20,8 @@ public class Team {
     public Long getId() { return id; }
     public String getName() { return name; }
     public void setName(String name) { this.name = name; }
+    public Integer getTeamNumber() { return teamNumber; }
+    public void setTeamNumber(Integer teamNumber) { this.teamNumber = teamNumber; }
     public Problem getProblem() { return problem; }
     public void setProblem(Problem problem) { this.problem = problem; }
     public List<Student> getStudents() { return students; }
