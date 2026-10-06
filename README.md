@@ -5,7 +5,6 @@ Full-stack hackathon management portal built with Spring Boot, React, and Postgr
 ## Features
 
 - Admin dashboard for team management and problem statements
-- Bulk team import from CSV
 - Assign one problem statement to multiple teams
 - Student login with VIT register number and access password
 - Shared problem statement for every member of a team
@@ -40,11 +39,3 @@ Set `VITE_API_URL` when the backend is not running at `http://localhost:8080`.
 - In Render, set the Neon JDBC URL as `jdbc:postgresql://<host>/<database>?sslmode=require`.
 - Deploy `frontend/` to Cloudflare Pages with build command `npm run build`, output directory `dist`, and `VITE_API_URL` pointing to the Render API URL.
 - After the Cloudflare Pages domain is ready, configure a custom VIT domain/subdomain through the college DNS administrator.
-
-## CSV import format
-
-```csv
-teamName,studentName,registerNumber,email,accessPassword
-Team Alpha,Student One,22BCE0001,student@example.com,change-me
-Team Alpha,Student Two,22BCE0002,student2@example.com,change-me
-```

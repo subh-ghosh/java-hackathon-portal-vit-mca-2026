@@ -2,17 +2,11 @@ package com.vit.hackathon.api;
 
 import com.vit.hackathon.model.*;
 import com.vit.hackathon.repository.*;
-import org.apache.commons.csv.CSVFormat;
-import org.apache.commons.csv.CSVParser;
-import org.apache.commons.csv.CSVRecord;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.http.HttpStatus;
 import org.springframework.web.bind.annotation.*;
-import org.springframework.web.multipart.MultipartFile;
 import org.springframework.web.server.ResponseStatusException;
 
-import java.io.InputStreamReader;
-import java.nio.charset.StandardCharsets;
 import java.time.Instant;
 import java.util.List;
 import java.util.Map;
@@ -78,37 +72,6 @@ public class HackathonController {
         Team team = teams.findById(teamId).orElseThrow();
         team.setProblem(problems.findById(problemId).orElseThrow());
         return teams.save(team);
-    }
-
-    @PostMapping(value = "/admin/teams/import", consumes = "multipart/form-data")
-    public Map<String, Integer> importTeams(@RequestHeader("X-Admin-Password") String password,
-                                            @RequestPart("file") MultipartFile file) {
-        requireAdmin(password);
-        if (file.isEmpty()) {
-            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "CSV file is empty");
-        }
-        int imported = 0;
-        try (var reader = new InputStreamReader(file.getInputStream(), StandardCharsets.UTF_8);
-             CSVParser parser = CSVFormat.DEFAULT.builder().setHeader().setSkipHeaderRecord(true).build().parse(reader)) {
-            for (CSVRecord row : parser) {
-                Team team = teams.findByNameIgnoreCase(row.get("teamName")).orElseGet(Team::new);
-                team.setName(row.get("teamName").trim());
-                Student student = students.findByRegisterNumberIgnoreCase(row.get("registerNumber"))
-                        .orElseGet(Student::new);
-                student.setName(row.get("studentName").trim());
-                student.setRegisterNumber(row.get("registerNumber").trim());
-                student.setEmail(row.get("email").trim());
-                student.setAccessPassword(row.get("accessPassword").trim());
-                student.setTeam(team);
-                team.getStudents().removeIf(existing -> existing.getRegisterNumber().equalsIgnoreCase(student.getRegisterNumber()));
-                team.getStudents().add(student);
-                teams.save(team);
-                imported++;
-            }
-        } catch (Exception error) {
-            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Could not parse CSV: " + error.getMessage(), error);
-        }
-        return Map.of("rowsImported", imported);
     }
 
     @PutMapping("/student/submission")
