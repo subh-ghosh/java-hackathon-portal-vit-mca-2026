@@ -221,6 +221,15 @@ public class HackathonController {
         problems.delete(problem);
     }
 
+    @DeleteMapping("/admin/problems")
+    public void clearProblems(@RequestHeader("X-Admin-Password") String password) {
+        requireAdmin(password);
+        List<Team> allTeams = teams.findAll();
+        allTeams.forEach(team -> team.setProblem(null));
+        teams.saveAll(allTeams);
+        problems.deleteAllInBatch();
+    }
+
     @PostMapping("/admin/teams")
     public Team createTeam(@RequestHeader("X-Admin-Password") String password, @RequestBody TeamRequest request) {
         requireAdmin(password);
@@ -317,6 +326,13 @@ public class HackathonController {
     public void deleteTeam(@RequestHeader("X-Admin-Password") String password, @PathVariable Long teamId) {
         requireAdmin(password);
         teams.deleteById(teamId);
+    }
+
+    @DeleteMapping("/admin/teams")
+    public void clearTeams(@RequestHeader("X-Admin-Password") String password) {
+        requireAdmin(password);
+        students.deleteAllInBatch();
+        teams.deleteAllInBatch();
     }
 
     @PostMapping("/admin/teams/{teamId}/students")
