@@ -19,21 +19,17 @@ public class HackathonController {
     private final StudentRepository students;
     private final ProblemRepository problems;
     private final String adminPassword;
-    private final Instant deadline;
-
     public HackathonController(TeamRepository teams, StudentRepository students, ProblemRepository problems,
-                               @Value("${app.admin.password}") String adminPassword,
-                               @Value("${app.submission.deadline}") Instant deadline) {
+                               @Value("${app.admin.password}") String adminPassword) {
         this.teams = teams;
         this.students = students;
         this.problems = problems;
         this.adminPassword = adminPassword;
-        this.deadline = deadline;
     }
 
     @GetMapping("/public/config")
     public Map<String, Object> config() {
-        return Map.of("deadline", deadline, "teamCount", teams.count(), "studentCount", students.count());
+        return Map.of("teamCount", teams.count(), "studentCount", students.count());
     }
 
     @PostMapping("/student/login")
