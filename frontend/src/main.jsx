@@ -43,7 +43,7 @@ function Login({ onLogin }) {
       onLogin(await request('/student/login', { method: 'POST', body: JSON.stringify(form) }), form);
     } catch (e) { setError(e.message); }
   }
-  return <main className="login-shell"><section className="hero"><img className="login-logo" src="/vit-logo-transparent.png" alt="Vellore Institute of Technology" /><span className="eyebrow">VIT - JAVA HACKATHON 2026</span><h1>Build something<br /><em>that matters.</em></h1><p>Your team space for the assigned problem statement and team details.</p><div className="stat-row"><strong>500+ <small>participants</small></strong><strong>100 <small>teams</small></strong><strong>24h <small>to build</small></strong></div></section>
+  return <main className="login-shell"><section className="hero"><div className="login-logo-wrap"><img className="login-logo" src="/vit-logo.png" alt="Vellore Institute of Technology" /></div><span className="eyebrow">VIT - JAVA HACKATHON 2026</span><h1>Build something<br /><em>that matters.</em></h1><p>Your team space for the assigned problem statement and team details.</p><div className="stat-row"><strong>500+ <small>participants</small></strong><strong>100 <small>teams</small></strong><strong>24h <small>to build</small></strong></div></section>
     <form className="card login-card" onSubmit={submit}><span className="eyebrow">PARTICIPANT PORTAL</span><h2>Welcome back.</h2><p className="muted">Sign in with the details shared by your coordinator.</p><label>VIT register number<input required value={form.registerNumber} onChange={e => setForm({ ...form, registerNumber: e.target.value })} placeholder="22BCE0001" /></label><label>Access password<input required type="password" value={form.password} onChange={e => setForm({ ...form, password: e.target.value })} placeholder="Enter your password" /></label>{error && <div className="error">{error}</div>}<button>Enter team space <span>→</span></button></form></main>;
 }
 
@@ -242,6 +242,5 @@ function App() {
 }
 
 createRoot(document.getElementById('root')).render(<App />);
-
 
 
