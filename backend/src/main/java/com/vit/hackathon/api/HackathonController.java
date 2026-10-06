@@ -374,6 +374,14 @@ public class HackathonController {
         requireAdmin(password);
         Student leader = students.findById(studentId).orElseThrow();
         Team team = leader.getTeam();
+        if (team == null) {
+            team = teams.findAll().stream()
+                    .filter(candidate -> candidate.getStudents().stream()
+                            .anyMatch(student -> student.getId().equals(studentId)))
+                    .findFirst()
+                    .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Student team not found"));
+            leader.setTeam(team);
+        }
         team.getStudents().forEach(student -> student.setLeader(student.getId().equals(studentId)));
         return teams.save(team);
     }
