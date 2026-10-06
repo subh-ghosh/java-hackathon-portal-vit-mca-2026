@@ -22,6 +22,7 @@ cd backend
 
 Set `DATABASE_URL`, `DATABASE_USERNAME`, and `DATABASE_PASSWORD` for Neon or a local PostgreSQL database.
 Set `ADMIN_PASSWORD` to a strong, private coordinator password. These values are required environment variables and are intentionally not stored in Git.
+`ADMIN_PASSWORD` must be a BCrypt hash in production. Student access keys are BCrypt-hashed when created or changed, and legacy student keys are upgraded after a successful login.
 
 ### Frontend
 

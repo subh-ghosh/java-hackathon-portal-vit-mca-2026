@@ -4,10 +4,11 @@ import com.vit.hackathon.model.*;
 import com.vit.hackathon.repository.*;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.http.HttpStatus;
+import org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder;
+import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.web.bind.annotation.*;
 import org.springframework.web.server.ResponseStatusException;
 
-import java.time.Instant;
 import java.util.List;
 import java.util.Map;
 
@@ -19,6 +20,8 @@ public class HackathonController {
     private final StudentRepository students;
     private final ProblemRepository problems;
     private final String adminPassword;
+    private final PasswordEncoder passwordEncoder = new BCryptPasswordEncoder();
+
     public HackathonController(TeamRepository teams, StudentRepository students, ProblemRepository problems,
                                @Value("${app.admin.password}") String adminPassword) {
         this.teams = teams;
@@ -35,7 +38,7 @@ public class HackathonController {
     @PostMapping("/student/login")
     public StudentTeamResponse login(@RequestBody LoginRequest request) {
         Student student = students.findByRegisterNumberIgnoreCase(request.registerNumber())
-                .filter(item -> item.getAccessPassword() != null && item.getAccessPassword().equals(request.password()))
+                .filter(item -> verifyStudentPassword(item, request.password()))
                 .orElseThrow(() -> new ResponseStatusException(HttpStatus.UNAUTHORIZED, "Invalid register number or password"));
         Team team = teams.findById(student.getTeam().getId()).orElseThrow();
         return new StudentTeamResponse(team.getName(), team.getProblem(), team.getStudents());
@@ -151,9 +154,24 @@ public class HackathonController {
     }
 
     private void requireAdmin(String password) {
-        if (password == null || !adminPassword.equals(password)) {
+        if (password == null || adminPassword == null || !passwordEncoder.matches(password, adminPassword)) {
             throw new ResponseStatusException(HttpStatus.UNAUTHORIZED, "Invalid admin password");
         }
+    }
+
+    private boolean verifyStudentPassword(Student student, String password) {
+        if (student.getAccessPassword() == null || password == null) {
+            return false;
+        }
+        if (student.getAccessPassword().startsWith("$2a$") || student.getAccessPassword().startsWith("$2b$")) {
+            return passwordEncoder.matches(password, student.getAccessPassword());
+        }
+        if (student.getAccessPassword().equals(password)) {
+            student.setAccessPassword(passwordEncoder.encode(password));
+            students.save(student);
+            return true;
+        }
+        return false;
     }
 
     private void applyStudent(Student student, StudentRequest request) {
@@ -161,7 +179,7 @@ public class HackathonController {
         student.setRegisterNumber(request.registerNumber());
         student.setEmail(request.email());
         if (request.accessPassword() != null && !request.accessPassword().isBlank()) {
-            student.setAccessPassword(request.accessPassword());
+            student.setAccessPassword(passwordEncoder.encode(request.accessPassword()));
         }
     }
 
