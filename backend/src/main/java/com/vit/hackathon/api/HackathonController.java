@@ -15,6 +15,7 @@ import java.io.IOException;
 import java.io.InputStreamReader;
 import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
+import java.util.Collections;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
@@ -113,6 +114,72 @@ public class HackathonController {
         problem.setTitle(request.title());
         problem.setStatement(request.statement());
         return problems.save(problem);
+    }
+
+    @PostMapping("/admin/problems/import")
+    public List<Problem> importProblems(@RequestHeader("X-Admin-Password") String password,
+                                        @RequestPart("file") MultipartFile file) {
+        requireAdmin(password);
+        if (file.isEmpty()) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "CSV file is empty");
+        }
+        try (BufferedReader reader = new BufferedReader(new InputStreamReader(
+                file.getInputStream(), StandardCharsets.UTF_8))) {
+            String headerLine = reader.readLine();
+            if (headerLine == null) {
+                throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "CSV file has no header");
+            }
+            List<String> headers = parseCsvLine(headerLine);
+            Map<String, Integer> columns = new HashMap<>();
+            for (int i = 0; i < headers.size(); i++) {
+                columns.put(normalize(headers.get(i)), i);
+            }
+            Integer titleColumn = findColumnAny(columns, "title", "problem title", "question title");
+            Integer statementColumn = findColumnAny(columns, "statement", "problem statement", "question", "description");
+            if (statementColumn == null) {
+                throw new ResponseStatusException(HttpStatus.BAD_REQUEST,
+                        "CSV must contain a statement, problem statement, question, or description column");
+            }
+            List<Problem> imported = new ArrayList<>();
+            String line;
+            int rowNumber = 1;
+            while ((line = reader.readLine()) != null) {
+                rowNumber++;
+                if (line.isBlank()) continue;
+                List<String> values = parseCsvLine(line);
+                String statement = valueAt(values, statementColumn);
+                if (statement.isBlank()) {
+                    throw new ResponseStatusException(HttpStatus.BAD_REQUEST,
+                            "Missing question statement on CSV row " + rowNumber);
+                }
+                Problem problem = new Problem();
+                problem.setTitle(titleColumn == null ? "Question " + (rowNumber - 1) : valueAt(values, titleColumn));
+                if (problem.getTitle() == null || problem.getTitle().isBlank()) {
+                    problem.setTitle("Question " + (rowNumber - 1));
+                }
+                problem.setStatement(statement);
+                imported.add(problems.save(problem));
+            }
+            return imported;
+        } catch (IOException exception) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Could not read CSV file", exception);
+        }
+    }
+
+    @PutMapping("/admin/teams/random-assignment")
+    public List<Team> randomlyAssignProblems(@RequestHeader("X-Admin-Password") String password) {
+        requireAdmin(password);
+        List<Team> allTeams = teams.findAll();
+        List<Problem> allProblems = problems.findAll();
+        if (allTeams.isEmpty() || allProblems.isEmpty()) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Create at least one team and one question first");
+        }
+        Collections.shuffle(allTeams);
+        Collections.shuffle(allProblems);
+        for (int i = 0; i < allTeams.size(); i++) {
+            allTeams.get(i).setProblem(allProblems.get(i % allProblems.size()));
+        }
+        return teams.saveAll(allTeams);
     }
 
     @PutMapping("/admin/problems/{problemId}")
@@ -344,6 +411,14 @@ public class HackathonController {
                 .map(Map.Entry::getValue)
                 .findFirst()
                 .orElse(null);
+    }
+
+    private static Integer findColumnAny(Map<String, Integer> columns, String... expectedNames) {
+        for (String expectedName : expectedNames) {
+            Integer column = findColumn(columns, expectedName);
+            if (column != null) return column;
+        }
+        return null;
     }
 
     private static String valueAt(List<String> values, int index) {
