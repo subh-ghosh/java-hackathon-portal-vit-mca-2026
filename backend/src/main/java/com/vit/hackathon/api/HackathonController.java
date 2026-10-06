@@ -177,7 +177,9 @@ public class HackathonController {
         student.setName(request.name());
         student.setRegisterNumber(request.registerNumber());
         student.setEmail(request.email());
-        student.setAccessPassword(request.accessPassword());
+        if (request.accessPassword() != null && !request.accessPassword().isBlank()) {
+            student.setAccessPassword(request.accessPassword());
+        }
     }
 
     public record LoginRequest(String registerNumber, String password) {}

@@ -95,7 +95,7 @@ function Admin() {
     const updated = await request(`/admin/students/${item.id}`, {
       method: 'PUT',
       headers: headers(),
-      body: JSON.stringify({ name, registerNumber, email, accessPassword: accessPassword || item.accessPassword })
+      body: JSON.stringify({ name, registerNumber, email, accessPassword })
     });
     setTeams(teams.map(team => ({ ...team, students: team.students.map(student => student.id === updated.id ? updated : student) })));
     setNotice('Student updated.');
