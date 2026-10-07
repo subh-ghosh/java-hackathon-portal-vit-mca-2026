@@ -17,6 +17,10 @@ public class Team {
     private Problem problem;
     @OneToMany(mappedBy = "team", cascade = CascadeType.ALL, orphanRemoval = true, fetch = FetchType.EAGER)
     private List<Student> students = new ArrayList<>();
+    @ElementCollection(fetch = FetchType.EAGER)
+    @CollectionTable(name = "team_imported_fields", joinColumns = @JoinColumn(name = "team_id"))
+    @OrderColumn(name = "column_order")
+    private List<ImportedTeamField> importedFields = new ArrayList<>();
     public Long getId() { return id; }
     public String getName() { return name; }
     public void setName(String name) { this.name = name; }
@@ -25,4 +29,8 @@ public class Team {
     public Problem getProblem() { return problem; }
     public void setProblem(Problem problem) { this.problem = problem; }
     public List<Student> getStudents() { return students; }
+    public List<ImportedTeamField> getImportedFields() { return importedFields; }
+    public void setImportedFields(List<ImportedTeamField> importedFields) {
+        this.importedFields = importedFields == null ? new ArrayList<>() : importedFields;
+    }
 }

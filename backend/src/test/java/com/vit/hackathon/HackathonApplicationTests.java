@@ -78,7 +78,11 @@ class HackathonApplicationTests {
                         .file(workbook)
                         .header("X-Admin-Password", ADMIN_PASSWORD))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$[0].students.length()").value(2));
+                        .andExpect(jsonPath("$[0].students.length()").value(4))
+                        .andExpect(jsonPath("$[0].importedFields.length()").value(27))
+                        .andExpect(jsonPath("$[0].importedFields[0].fieldName").value("Username"))
+                        .andExpect(jsonPath("$[0].importedFields[0].fieldValue").value("coordinator@example.com"))
+                        .andExpect(jsonPath("$[0].importedFields[19].fieldValue").value("22BCE0002"));
 
         Long teamId = teams.findAll().get(0).getId();
         Long leaderId = students.findByRegisterNumberIgnoreCase("22BCE0001").orElseThrow().getId();
@@ -164,7 +168,7 @@ class HackathonApplicationTests {
 
         mockMvc.perform(put("/api/student/submission")
                         .contentType(MediaType.APPLICATION_JSON)
-                        .content("{\"name\":\"TEST MEMBER\",\"registerNumber\":\"22BCE0002\","
+                        .content("{\"name\":\"TEST MEMBER 2\",\"registerNumber\":\"22BCE0002\","
                                 + "\"googleDriveLink\":\"https://drive.google.com/file/d/test\","
                                 + "\"githubLink\":\"https://github.com/example/project\"}"))
                 .andExpect(status().isForbidden());
@@ -233,15 +237,49 @@ class HackathonApplicationTests {
         try (XSSFWorkbook workbook = new XSSFWorkbook(); ByteArrayOutputStream output = new ByteArrayOutputStream()) {
             Sheet sheet = workbook.createSheet("Teams");
             Row headers = sheet.createRow(0);
-            headers.createCell(0).setCellValue("Name of the Group Leader");
-            headers.createCell(1).setCellValue("Register Number/Roll Number of the Group Leader");
-            headers.createCell(2).setCellValue("Team Member 2 - Name");
-            headers.createCell(3).setCellValue("Team Member 2 - Registration Number/Roll Number");
+            String[] headerNames = {
+                    "Username", "Timestamp", "Name of the Group Leader", "Register Number/Roll Number of the Group Leader",
+                    "Programme", "Specialization (say for example CSE/ECE/EEE/ CSE SPEC. IN AI ML)", "Institution",
+                    "Payment Reference Number", "Name of the Institute", "City", "State", "Team Member 2 - Name",
+                    "Team Member 2 - Registration Number/Roll Number", "Team Member 3 - Name",
+                    "Team Member 3 - Registration Number/Roll Number", "Team Member 4 - Name",
+                    "Team Member 4 - Registration Number/Roll Number", "Primary Contact Number (preferably Whatsapp Number)",
+                    "Primary Email Id", "Team Member 2 - Registration Number/Enrollment Number/Register Number",
+                    "Team Member 3 - Registration Number/Enrollment Number/Register Number",
+                    "Team Member 3 - Name (As per SSLC Record)", "Team Member 4 - Registration Number/Enrollment Number/Register Number",
+                    "Team Member 4 - Name (As per SSLC Record)", "Primary Contact Number (preferably Whatsapp Number)",
+                    "Email ID", "Their Gmail ID"
+            };
+            for (int i = 0; i < headerNames.length; i++) {
+                headers.createCell(i).setCellValue(headerNames[i]);
+            }
             Row values = sheet.createRow(1);
-            values.createCell(0).setCellValue("TEST LEADER");
-            values.createCell(1).setCellValue("22BCE0001");
-            values.createCell(2).setCellValue("TEST MEMBER");
-            values.createCell(3).setCellValue("22BCE0002");
+            values.createCell(0).setCellValue("coordinator@example.com");
+            values.createCell(1).setCellValue("2026-10-08 04:00:00");
+            values.createCell(2).setCellValue("TEST LEADER");
+            values.createCell(3).setCellValue("22BCE0001");
+            values.createCell(4).setCellValue("MCA");
+            values.createCell(5).setCellValue("CSE");
+            values.createCell(6).setCellValue("VIT");
+            values.createCell(7).setCellValue("PAY-123");
+            values.createCell(8).setCellValue("Vellore Institute of Technology");
+            values.createCell(9).setCellValue("Vellore");
+            values.createCell(10).setCellValue("Tamil Nadu");
+            values.createCell(11).setCellValue("TEST MEMBER 2");
+            values.createCell(13).setCellValue("TEST MEMBER 3");
+            values.createCell(14).setCellValue("22BCE0003");
+            values.createCell(15).setCellValue("TEST MEMBER 4");
+            values.createCell(16).setCellValue("22BCE0004");
+            values.createCell(17).setCellValue("9876543210");
+            values.createCell(18).setCellValue("team@example.com");
+            values.createCell(19).setCellValue("22BCE0002");
+            values.createCell(20).setCellValue("22BCE0003");
+            values.createCell(21).setCellValue("TEST MEMBER 3");
+            values.createCell(22).setCellValue("22BCE0004");
+            values.createCell(23).setCellValue("TEST MEMBER 4");
+            values.createCell(24).setCellValue("9876543210");
+            values.createCell(25).setCellValue("leader@example.com");
+            values.createCell(26).setCellValue("leader@gmail.com");
             workbook.write(output);
             return new MockMultipartFile("file", "teams.xlsx",
                     "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", output.toByteArray());

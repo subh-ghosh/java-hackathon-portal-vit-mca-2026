@@ -34,6 +34,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Locale;
 import java.util.Objects;
+import java.util.TreeMap;
 import java.time.OffsetDateTime;
 import java.time.ZoneOffset;
 import java.time.ZoneId;
@@ -307,26 +308,22 @@ public class HackathonController {
                 throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "CSV file has no header");
             }
             List<String> headers = parseCsvLine(headerLine);
-            Map<String, Integer> columns = new HashMap<>();
-            for (int i = 0; i < headers.size(); i++) {
-                columns.put(normalize(headers.get(i)), i);
-            }
-            Integer representativeColumn = findColumnAny(columns,
-                    "team representative register number",
-                    "register number roll number of the group leader",
-                    "register number of the group leader",
-                    "registration number roll number of the group leader",
-                    "registration number of the group leader");
+            Integer representativeColumn = findColumnContaining(headers, "group leader", "regist");
             if (representativeColumn == null) {
                 throw new ResponseStatusException(HttpStatus.BAD_REQUEST,
                         "CSV must contain the group leader register number column");
             }
-            List<Integer> memberColumns = columns.entrySet().stream()
-                    .filter(entry -> entry.getKey().contains("member") && entry.getKey().contains("regist"))
-                    .map(Map.Entry::getValue)
-                    .sorted()
-                    .toList();
-            if (memberColumns.isEmpty()) {
+            Map<Integer, List<Integer>> memberRegisterColumns = new TreeMap<>();
+            for (int i = 0; i < headers.size(); i++) {
+                String normalizedHeader = normalize(headers.get(i));
+                java.util.regex.Matcher memberNumber = java.util.regex.Pattern
+                        .compile("member\\s+(\\d+)").matcher(normalizedHeader);
+                if (normalizedHeader.contains("regist") && memberNumber.find()) {
+                    memberRegisterColumns.computeIfAbsent(Integer.parseInt(memberNumber.group(1)),
+                            ignored -> new ArrayList<>()).add(i);
+                }
+            }
+            if (memberRegisterColumns.isEmpty()) {
                 throw new ResponseStatusException(HttpStatus.BAD_REQUEST,
                         "CSV must contain at least one member register number column");
             }
@@ -337,12 +334,16 @@ public class HackathonController {
                 rowNumber++;
                 if (line.isBlank()) continue;
                 List<String> values = parseCsvLine(line);
+                List<ImportedTeamField> importedFields = new ArrayList<>();
+                for (int i = 0; i < headers.size(); i++) {
+                    importedFields.add(new ImportedTeamField(i, headers.get(i), valueAt(values, i)));
+                }
                 String leaderRegister = valueAt(values, representativeColumn);
                 if (isIgnoredRegister(leaderRegister)) {
                     throw new ResponseStatusException(HttpStatus.BAD_REQUEST,
                             "Missing representative register number on CSV row " + rowNumber);
                 }
-                Integer leaderNameColumn = findColumnContaining(columns, "group leader", "name");
+                Integer leaderNameColumn = findColumnContaining(headers, "group leader", "name");
                 String leaderName = leaderNameColumn == null ? "" : valueAt(values, leaderNameColumn);
                 if (leaderName.isBlank() || leaderName.trim().equalsIgnoreCase(leaderRegister)) {
                     throw new ResponseStatusException(HttpStatus.BAD_REQUEST,
@@ -350,19 +351,14 @@ public class HackathonController {
                 }
                 List<ImportedParticipant> participants = new ArrayList<>();
                 participants.add(new ImportedParticipant(leaderRegister, leaderName));
-                for (Integer column : memberColumns) {
-                    String register = valueAt(values, column);
+                for (Map.Entry<Integer, List<Integer>> memberColumns : memberRegisterColumns.entrySet()) {
+                    String register = firstNonBlankValue(values, memberColumns.getValue());
                     if (isIgnoredRegister(register)) continue;
                     if (participants.stream().anyMatch(participant ->
                             participant.registerNumber().equalsIgnoreCase(register))) continue;
-                    String header = columns.entrySet().stream()
-                            .filter(entry -> entry.getValue().equals(column))
-                            .map(Map.Entry::getKey)
-                            .findFirst()
-                            .orElse("");
-                    String memberNumber = header.replaceFirst(".*?member\\s*(\\d+).*", "$1");
-                    Integer nameColumn = findColumnContaining(columns, "member " + memberNumber, "name");
-                    String name = nameColumn == null ? "" : valueAt(values, nameColumn);
+                    List<Integer> nameColumns = findColumnsContaining(headers,
+                            "member " + memberColumns.getKey(), "name");
+                    String name = firstNonBlankValue(values, nameColumns);
                     if (name.isBlank() || name.trim().equalsIgnoreCase(register)) {
                         throw new ResponseStatusException(HttpStatus.BAD_REQUEST,
                                 "Missing or invalid name for member register number " + register
@@ -373,6 +369,7 @@ public class HackathonController {
                 Team team = new Team();
                 team.setTeamNumber(nextTeamNumber());
                 team.setName(String.format("Team %03d", team.getTeamNumber()));
+                team.setImportedFields(importedFields);
                 for (int i = 0; i < participants.size(); i++) {
                     Student student = new Student();
                     ImportedParticipant participant = participants.get(i);
@@ -667,6 +664,30 @@ public class HackathonController {
                 .map(Map.Entry::getValue)
                 .findFirst()
                 .orElse(null);
+    }
+
+    private static Integer findColumnContaining(List<String> headers, String... fragments) {
+        List<Integer> matches = findColumnsContaining(headers, fragments);
+        return matches.isEmpty() ? null : matches.get(0);
+    }
+
+    private static List<Integer> findColumnsContaining(List<String> headers, String... fragments) {
+        List<Integer> matches = new ArrayList<>();
+        for (int i = 0; i < headers.size(); i++) {
+            String normalizedHeader = normalize(headers.get(i));
+            if (Arrays.stream(fragments).allMatch(fragment -> normalizedHeader.contains(normalize(fragment)))) {
+                matches.add(i);
+            }
+        }
+        return matches;
+    }
+
+    private static String firstNonBlankValue(List<String> values, List<Integer> columns) {
+        return columns.stream()
+                .map(index -> valueAt(values, index))
+                .filter(value -> !value.isBlank())
+                .findFirst()
+                .orElse("");
     }
 
     private static String valueAt(List<String> values, int index) {
