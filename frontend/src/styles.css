@@ -22,3 +22,16 @@
 .problem-form input,.problem-form textarea{width:100%}
 .problem-form textarea{height:100px}
 .problem-form button{width:100%;margin-top:4px}
+.settings-form{margin-bottom:22px}
+.settings-form .card-top{align-items:center}
+.settings-form .card-top button{background:#173e2c;color:#fff;padding:12px 16px;border-radius:9px;font-weight:700}
+.checkbox-label{display:flex;align-items:center;gap:10px;margin:18px 0;color:#365542;font-size:.85rem;font-weight:700}
+.checkbox-label input{width:18px;height:18px;accent-color:#34794d}
+.settings-fields{display:grid;grid-template-columns:1fr 1fr;gap:16px}
+.settings-fields label{display:block;color:#53645a;font-size:.75rem;font-weight:700}
+.settings-fields input{display:block;width:100%;border:1px solid #dce4de;border-radius:9px;padding:12px;margin-top:8px}
+.submission-card h2{margin-top:18px}
+.submission-card label{margin-top:18px}
+.submission-card button{margin-top:20px}
+.table-wrap a{color:#34794d;font-weight:700}
+@media(max-width:600px){.settings-fields{grid-template-columns:1fr}.settings-form .card-top{align-items:flex-start;gap:12px;flex-direction:column}.settings-form .card-top button{width:100%}}
