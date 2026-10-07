@@ -30,6 +30,7 @@ import java.util.Arrays;
 import java.util.Collections;
 import java.util.Comparator;
 import java.util.HashMap;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Locale;
@@ -334,10 +335,7 @@ public class HackathonController {
                 rowNumber++;
                 if (line.isBlank()) continue;
                 List<String> values = parseCsvLine(line);
-                List<ImportedTeamField> importedFields = new ArrayList<>();
-                for (int i = 0; i < headers.size(); i++) {
-                    importedFields.add(new ImportedTeamField(i, headers.get(i), valueAt(values, i)));
-                }
+                List<ImportedTeamField> importedFields = uniqueImportedFields(headers, values);
                 String leaderRegister = valueAt(values, representativeColumn);
                 if (isIgnoredRegister(leaderRegister)) {
                     throw new ResponseStatusException(HttpStatus.BAD_REQUEST,
@@ -688,6 +686,38 @@ public class HackathonController {
                 .filter(value -> !value.isBlank())
                 .findFirst()
                 .orElse("");
+    }
+
+    private static List<ImportedTeamField> uniqueImportedFields(List<String> headers, List<String> values) {
+        Map<String, List<Integer>> columnsByField = new LinkedHashMap<>();
+        for (int i = 0; i < headers.size(); i++) {
+            columnsByField.computeIfAbsent(importedFieldKey(headers.get(i)), ignored -> new ArrayList<>()).add(i);
+        }
+        List<ImportedTeamField> fields = new ArrayList<>();
+        for (List<Integer> columns : columnsByField.values()) {
+            int firstColumn = columns.get(0);
+            fields.add(new ImportedTeamField(firstColumn, headers.get(firstColumn),
+                    firstNonBlankValue(values, columns)));
+        }
+        return fields;
+    }
+
+    private static String importedFieldKey(String header) {
+        String normalizedHeader = normalize(header);
+        java.util.regex.Matcher member = java.util.regex.Pattern
+                .compile("member\\s+(\\d+)").matcher(normalizedHeader);
+        if (member.find()) {
+            if (normalizedHeader.contains("name")) {
+                return "member " + member.group(1) + " name";
+            }
+            if (normalizedHeader.contains("regist") || normalizedHeader.contains("enrollment")) {
+                return "member " + member.group(1) + " register number";
+            }
+        }
+        if (normalizedHeader.contains("primary contact number")) {
+            return "primary contact number";
+        }
+        return normalizedHeader;
     }
 
     private static String valueAt(List<String> values, int index) {

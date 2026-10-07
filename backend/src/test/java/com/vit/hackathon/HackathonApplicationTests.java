@@ -79,10 +79,14 @@ class HackathonApplicationTests {
                         .header("X-Admin-Password", ADMIN_PASSWORD))
                 .andExpect(status().isOk())
                         .andExpect(jsonPath("$[0].students.length()").value(4))
-                        .andExpect(jsonPath("$[0].importedFields.length()").value(27))
+                        .andExpect(jsonPath("$[0].importedFields.length()").value(21))
                         .andExpect(jsonPath("$[0].importedFields[0].fieldName").value("Username"))
                         .andExpect(jsonPath("$[0].importedFields[0].fieldValue").value("coordinator@example.com"))
-                        .andExpect(jsonPath("$[0].importedFields[19].fieldValue").value("22BCE0002"));
+                        .andExpect(jsonPath("$[0].importedFields[12].fieldName")
+                                .value("Team Member 2 - Registration Number/Roll Number"))
+                        .andExpect(jsonPath("$[0].importedFields[12].fieldValue").value("22BCE0002"))
+                        .andExpect(jsonPath("$[0].importedFields[17].fieldName")
+                                .value("Primary Contact Number (preferably Whatsapp Number)"));
 
         Long teamId = teams.findAll().get(0).getId();
         Long leaderId = students.findByRegisterNumberIgnoreCase("22BCE0001").orElseThrow().getId();
