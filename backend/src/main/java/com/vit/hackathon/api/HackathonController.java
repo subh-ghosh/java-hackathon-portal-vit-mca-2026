@@ -88,7 +88,7 @@ public class HackathonController {
                 .map(Student::getRegisterNumber)
                 .findFirst()
                 .orElse(null);
-        String participantName = displayName(student);
+        String participantName = student.getName() == null ? "" : student.getName().trim();
         Problem visibleProblem = team.getProblem() != null && team.getProblem().isEnabled() ? team.getProblem() : null;
         return new StudentTeamResponse(team.getName(), team.getTeamNumber(), student.getRegisterNumber(),
                 participantName, student.getEmail(), leaderRegisterNumber, visibleProblem, team.getStudents(),
@@ -342,24 +342,42 @@ public class HackathonController {
                     throw new ResponseStatusException(HttpStatus.BAD_REQUEST,
                             "Missing representative register number on CSV row " + rowNumber);
                 }
-                List<String> registers = new ArrayList<>();
-                registers.add(leaderRegister);
+                Integer leaderNameColumn = findColumnContaining(columns, "group leader", "name");
+                String leaderName = leaderNameColumn == null ? "" : valueAt(values, leaderNameColumn);
+                if (leaderName.isBlank() || leaderName.trim().equalsIgnoreCase(leaderRegister)) {
+                    throw new ResponseStatusException(HttpStatus.BAD_REQUEST,
+                            "Missing or invalid group leader name on CSV row " + rowNumber);
+                }
+                List<ImportedParticipant> participants = new ArrayList<>();
+                participants.add(new ImportedParticipant(leaderRegister, leaderName));
                 for (Integer column : memberColumns) {
                     String register = valueAt(values, column);
-                    if (!isIgnoredRegister(register) && !registers.contains(register)) registers.add(register);
+                    if (isIgnoredRegister(register)) continue;
+                    if (participants.stream().anyMatch(participant ->
+                            participant.registerNumber().equalsIgnoreCase(register))) continue;
+                    String header = columns.entrySet().stream()
+                            .filter(entry -> entry.getValue().equals(column))
+                            .map(Map.Entry::getKey)
+                            .findFirst()
+                            .orElse("");
+                    String memberNumber = header.replaceFirst(".*?member\\s*(\\d+).*", "$1");
+                    Integer nameColumn = findColumnContaining(columns, "member " + memberNumber, "name");
+                    String name = nameColumn == null ? "" : valueAt(values, nameColumn);
+                    if (name.isBlank() || name.trim().equalsIgnoreCase(register)) {
+                        throw new ResponseStatusException(HttpStatus.BAD_REQUEST,
+                                "Missing or invalid name for member register number " + register
+                                        + " on CSV row " + rowNumber);
+                    }
+                    participants.add(new ImportedParticipant(register, name));
                 }
                 Team team = new Team();
                 team.setTeamNumber(nextTeamNumber());
                 team.setName(String.format("Team %03d", team.getTeamNumber()));
-                for (int i = 0; i < registers.size(); i++) {
+                for (int i = 0; i < participants.size(); i++) {
                     Student student = new Student();
-                    String register = registers.get(i);
-                    Integer nameColumn = i == 0
-                            ? findColumnContaining(columns, "group leader", "name")
-                            : findColumnContaining(columns, "member " + (i + 1), "name");
-                    String name = nameColumn == null ? "" : valueAt(values, nameColumn);
-                    student.setName(name.isBlank() ? register : name);
-                    student.setRegisterNumber(register);
+                    ImportedParticipant participant = participants.get(i);
+                    student.setName(participant.name().trim());
+                    student.setRegisterNumber(participant.registerNumber().trim());
                     student.setLeader(i == 0);
                     student.setTeam(team);
                     team.getStudents().add(student);
@@ -505,21 +523,34 @@ public class HackathonController {
             throw new ResponseStatusException(HttpStatus.UNAUTHORIZED, "Invalid name or register number");
         }
         return students.findByRegisterNumberIgnoreCase(registerNumber.trim())
-                .filter(student -> displayName(student).equalsIgnoreCase(name.trim()))
+                .filter(student -> hasParticipantName(student)
+                        && student.getName().trim().equalsIgnoreCase(name.trim()))
                 .orElseThrow(() -> new ResponseStatusException(HttpStatus.UNAUTHORIZED,
                         "Invalid name or register number"));
     }
 
-    private String displayName(Student student) {
-        return student.getName() == null || student.getName().isBlank()
-                ? student.getRegisterNumber()
-                : student.getName().trim();
+    private boolean hasParticipantName(Student student) {
+        return student.getName() != null
+                && !student.getName().isBlank()
+                && !student.getName().trim().equalsIgnoreCase(student.getRegisterNumber());
     }
 
     private void applyStudent(Student student, StudentRequest request) {
-        student.setName(request.name());
-        student.setRegisterNumber(request.registerNumber());
-        student.setEmail(request.email());
+        if (request.name() == null || request.name().isBlank()) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Participant name is required for sign-in");
+        }
+        if (request.registerNumber() == null || request.registerNumber().isBlank()) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Register number is required");
+        }
+        String name = request.name().trim();
+        String registerNumber = request.registerNumber().trim();
+        if (name.equalsIgnoreCase(registerNumber)) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST,
+                    "Participant name must be their actual name, not their register number");
+        }
+        student.setName(name);
+        student.setRegisterNumber(registerNumber);
+        student.setEmail(request.email() == null || request.email().isBlank() ? null : request.email().trim());
     }
 
     public record LoginRequest(String name, String registerNumber) {}
@@ -532,6 +563,7 @@ public class HackathonController {
     public record SettingsRequest(boolean loginEnabled, String startTime, String endTime) {}
     public record SubmissionRequest(String name, String registerNumber, String googleDriveLink, String githubLink) {}
     public record EnabledRequest(boolean enabled) {}
+    private record ImportedParticipant(String registerNumber, String name) {}
 
     private void saveSetting(String key, String value) {
         settings.save(new AppSetting(key, value));

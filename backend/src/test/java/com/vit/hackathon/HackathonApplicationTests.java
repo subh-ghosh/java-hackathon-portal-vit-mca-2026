@@ -1,7 +1,9 @@
 package com.vit.hackathon;
 
 import com.vit.hackathon.model.Problem;
+import com.vit.hackathon.model.Student;
 import com.vit.hackathon.repository.ProblemRepository;
+import com.vit.hackathon.repository.StudentRepository;
 import com.vit.hackathon.repository.TeamRepository;
 import org.apache.poi.ss.usermodel.Row;
 import org.apache.poi.ss.usermodel.Sheet;
@@ -56,12 +58,20 @@ class HackathonApplicationTests {
     @Autowired
     private TeamRepository teams;
 
+    @Autowired
+    private StudentRepository students;
+
     @Test
     void adminCanImportExcelManageLoginAndEnableProblemsAndLeaderCanSubmit() throws Exception {
         mockMvc.perform(get("/api/admin/settings")
                         .header("X-Admin-Password", ADMIN_PASSWORD))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.loginEnabled").value(true));
+
+        mockMvc.perform(multipart("/api/admin/teams/import")
+                        .file(teamWorkbookWithoutMemberName())
+                        .header("X-Admin-Password", ADMIN_PASSWORD))
+                .andExpect(status().isBadRequest());
 
         MockMultipartFile workbook = teamWorkbook();
         mockMvc.perform(multipart("/api/admin/teams/import")
@@ -70,11 +80,38 @@ class HackathonApplicationTests {
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$[0].students.length()").value(2));
 
+        Long teamId = teams.findAll().get(0).getId();
+        Long leaderId = students.findByRegisterNumberIgnoreCase("22BCE0001").orElseThrow().getId();
+        mockMvc.perform(post("/api/admin/teams/{teamId}/students", teamId)
+                        .header("X-Admin-Password", ADMIN_PASSWORD)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"name\":\"\",\"registerNumber\":\"22BCE0003\"}"))
+                .andExpect(status().isBadRequest());
+        mockMvc.perform(post("/api/admin/teams/{teamId}/students", teamId)
+                        .header("X-Admin-Password", ADMIN_PASSWORD)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"name\":\"22BCE0003\",\"registerNumber\":\"22BCE0003\"}"))
+                .andExpect(status().isBadRequest());
+        mockMvc.perform(put("/api/admin/students/{studentId}", leaderId)
+                        .header("X-Admin-Password", ADMIN_PASSWORD)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"name\":\" \",\"registerNumber\":\"22BCE0001\"}"))
+                .andExpect(status().isBadRequest());
+
+        Student leader = students.findById(leaderId).orElseThrow();
+        leader.setName("22BCE0001");
+        students.saveAndFlush(leader);
+        mockMvc.perform(post("/api/student/login")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"name\":\"22BCE0001\",\"registerNumber\":\"22BCE0001\"}"))
+                .andExpect(status().isUnauthorized());
+        leader.setName("TEST LEADER");
+        students.saveAndFlush(leader);
+
         Problem problem = new Problem();
         problem.setTitle("Test problem");
         problem.setStatement("Test statement");
         problem = problems.saveAndFlush(problem);
-        Long teamId = teams.findAll().get(0).getId();
         mockMvc.perform(put("/api/admin/teams/{teamId}/problem/{problemId}", teamId, problem.getId())
                         .header("X-Admin-Password", ADMIN_PASSWORD))
                 .andExpect(status().isOk());
@@ -207,6 +244,24 @@ class HackathonApplicationTests {
             values.createCell(3).setCellValue("22BCE0002");
             workbook.write(output);
             return new MockMultipartFile("file", "teams.xlsx",
+                    "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", output.toByteArray());
+        }
+    }
+
+    private MockMultipartFile teamWorkbookWithoutMemberName() throws Exception {
+        try (XSSFWorkbook workbook = new XSSFWorkbook(); ByteArrayOutputStream output = new ByteArrayOutputStream()) {
+            Sheet sheet = workbook.createSheet("Teams");
+            Row headers = sheet.createRow(0);
+            headers.createCell(0).setCellValue("Name of the Group Leader");
+            headers.createCell(1).setCellValue("Register Number/Roll Number of the Group Leader");
+            headers.createCell(2).setCellValue("Team Member 2 - Name");
+            headers.createCell(3).setCellValue("Team Member 2 - Registration Number/Roll Number");
+            Row values = sheet.createRow(1);
+            values.createCell(0).setCellValue("TEST LEADER");
+            values.createCell(1).setCellValue("22BCE0003");
+            values.createCell(3).setCellValue("22BCE0004");
+            workbook.write(output);
+            return new MockMultipartFile("file", "teams-missing-member-name.xlsx",
                     "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", output.toByteArray());
         }
     }
