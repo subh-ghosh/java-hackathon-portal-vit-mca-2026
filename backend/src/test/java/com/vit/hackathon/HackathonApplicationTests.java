@@ -17,6 +17,8 @@ import org.springframework.test.context.DynamicPropertySource;
 import org.springframework.test.web.servlet.MockMvc;
 
 import java.io.ByteArrayOutputStream;
+import java.time.OffsetDateTime;
+import java.time.ZoneOffset;
 
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.multipart;
 import org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder;
@@ -77,6 +79,26 @@ class HackathonApplicationTests {
                         .header("X-Admin-Password", ADMIN_PASSWORD))
                 .andExpect(status().isOk());
 
+        mockMvc.perform(post("/api/admin/teams")
+                        .header("X-Admin-Password", ADMIN_PASSWORD)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"name\":\"Second group\"}"))
+                .andExpect(status().isOk());
+        Long secondTeamId = teams.findAll().stream()
+                .filter(team -> "Second group".equals(team.getName()))
+                .findFirst()
+                .orElseThrow()
+                .getId();
+        mockMvc.perform(put("/api/admin/teams/{teamId}/problem/{problemId}", secondTeamId, problem.getId())
+                        .header("X-Admin-Password", ADMIN_PASSWORD))
+                .andExpect(status().isOk());
+
+        mockMvc.perform(get("/api/admin/teams")
+                        .header("X-Admin-Password", ADMIN_PASSWORD))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$[0].problem.id").value(problem.getId()))
+                .andExpect(jsonPath("$[1].problem.id").value(problem.getId()));
+
         mockMvc.perform(post("/api/student/login")
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("{\"name\":\"TEST LEADER\",\"registerNumber\":\"22BCE0001\"}"))
@@ -84,6 +106,11 @@ class HackathonApplicationTests {
                 .andExpect(jsonPath("$.leader").value(true))
                 .andExpect(jsonPath("$.ownRegisterNumber").value("22BCE0001"))
                 .andExpect(jsonPath("$.problem").value(nullValue()));
+
+        mockMvc.perform(post("/api/student/login")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"name\":\"WRONG NAME\",\"registerNumber\":\"22BCE0001\"}"))
+                .andExpect(status().isUnauthorized());
 
         mockMvc.perform(put("/api/student/submission")
                         .contentType(MediaType.APPLICATION_JSON)
@@ -117,6 +144,40 @@ class HackathonApplicationTests {
                         .content("{\"name\":\"TEST LEADER\",\"registerNumber\":\"22BCE0001\"}"))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.problem.id").value(problem.getId()));
+
+        OffsetDateTime now = OffsetDateTime.now(ZoneOffset.UTC);
+        mockMvc.perform(put("/api/admin/settings")
+                        .header("X-Admin-Password", ADMIN_PASSWORD)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"loginEnabled\":true,\"startTime\":\"" + now.plusMinutes(1)
+                                + "\",\"endTime\":\"\"}"))
+                .andExpect(status().isOk());
+        mockMvc.perform(post("/api/student/login")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"name\":\"TEST LEADER\",\"registerNumber\":\"22BCE0001\"}"))
+                .andExpect(status().isForbidden());
+
+        mockMvc.perform(put("/api/admin/settings")
+                        .header("X-Admin-Password", ADMIN_PASSWORD)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"loginEnabled\":true,\"startTime\":\"" + now.minusMinutes(1)
+                                + "\",\"endTime\":\"" + now.plusMinutes(1) + "\"}"))
+                .andExpect(status().isOk());
+        mockMvc.perform(post("/api/student/login")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"name\":\"TEST LEADER\",\"registerNumber\":\"22BCE0001\"}"))
+                .andExpect(status().isOk());
+
+        mockMvc.perform(put("/api/admin/settings")
+                        .header("X-Admin-Password", ADMIN_PASSWORD)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"loginEnabled\":true,\"startTime\":\"\",\"endTime\":\""
+                                + now.minusMinutes(1) + "\"}"))
+                .andExpect(status().isOk());
+        mockMvc.perform(post("/api/student/login")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"name\":\"TEST LEADER\",\"registerNumber\":\"22BCE0001\"}"))
+                .andExpect(status().isForbidden());
 
         mockMvc.perform(put("/api/admin/settings")
                         .header("X-Admin-Password", ADMIN_PASSWORD)

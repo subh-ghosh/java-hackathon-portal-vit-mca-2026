@@ -15,8 +15,6 @@ public class Student {
     private String email;
     @Column(nullable = false)
     private boolean leader = false;
-    @JsonIgnore
-    private String accessPassword;
     @ManyToOne(fetch = FetchType.LAZY)
     @JsonIgnore
     private Team team;
@@ -30,8 +28,6 @@ public class Student {
     public void setEmail(String value) { email = value; }
     public boolean isLeader() { return leader; }
     public void setLeader(boolean value) { leader = value; }
-    public String getAccessPassword() { return accessPassword; }
-    public void setAccessPassword(String value) { accessPassword = value; }
     public Team getTeam() { return team; }
     public void setTeam(Team value) { team = value; }
 }

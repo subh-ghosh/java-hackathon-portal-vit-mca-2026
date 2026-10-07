@@ -91,7 +91,7 @@ public class HackathonController {
         String participantName = displayName(student);
         Problem visibleProblem = team.getProblem() != null && team.getProblem().isEnabled() ? team.getProblem() : null;
         return new StudentTeamResponse(team.getName(), team.getTeamNumber(), student.getRegisterNumber(),
-                participantName, leaderRegisterNumber, visibleProblem, team.getStudents(),
+                participantName, student.getEmail(), leaderRegisterNumber, visibleProblem, team.getStudents(),
                 student.isLeader(), submissions.findByTeamId(team.getId()).orElse(null));
     }
 
@@ -151,28 +151,6 @@ public class HackathonController {
     public List<Problem> listProblems(@RequestHeader("X-Admin-Password") String password) {
         requireAdmin(password);
         return problems.findAll();
-    }
-
-    @GetMapping("/admin/access-password")
-    public Map<String, Boolean> accessPasswordStatus(@RequestHeader("X-Admin-Password") String password) {
-        requireAdmin(password);
-        return Map.of("configured", settings.findById("student-access-password").isPresent());
-    }
-
-    @PutMapping("/admin/access-password")
-    public Map<String, Boolean> updateAccessPassword(@RequestHeader("X-Admin-Password") String password,
-                                                      @RequestBody AccessPasswordRequest request) {
-        requireAdmin(password);
-        if (request.password() == null || request.password().isBlank()) {
-            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Access password cannot be blank");
-        }
-        String hash = passwordEncoder.encode(request.password());
-        settings.save(new AppSetting("student-access-password", hash));
-        students.findAll().forEach(student -> {
-            student.setAccessPassword(hash);
-            students.save(student);
-        });
-        return Map.of("configured", true);
     }
 
     @PostMapping("/admin/problems")
@@ -546,12 +524,11 @@ public class HackathonController {
 
     public record LoginRequest(String name, String registerNumber) {}
     public record StudentTeamResponse(String name, Integer teamNumber, String ownRegisterNumber,
-                                      String ownName, String leaderRegisterNumber, Problem problem,
+                                      String ownName, String ownEmail, String leaderRegisterNumber, Problem problem,
                                       List<Student> students, boolean leader, Submission submission) {}
     public record ProblemRequest(String title, String statement) {}
-    public record AccessPasswordRequest(String password) {}
     public record TeamRequest(String name) {}
-    public record StudentRequest(String name, String registerNumber, String email, String accessPassword) {}
+    public record StudentRequest(String name, String registerNumber, String email) {}
     public record SettingsRequest(boolean loginEnabled, String startTime, String endTime) {}
     public record SubmissionRequest(String name, String registerNumber, String googleDriveLink, String githubLink) {}
     public record EnabledRequest(boolean enabled) {}
