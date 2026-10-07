@@ -2,13 +2,17 @@ package com.vit.hackathon;
 
 import com.vit.hackathon.model.Problem;
 import com.vit.hackathon.model.Student;
+import com.vit.hackathon.model.Team;
+import com.vit.hackathon.repository.AppSettingRepository;
 import com.vit.hackathon.repository.ProblemRepository;
+import com.vit.hackathon.repository.SubmissionRepository;
 import com.vit.hackathon.repository.StudentRepository;
 import com.vit.hackathon.repository.TeamRepository;
 import org.apache.poi.ss.usermodel.Row;
 import org.apache.poi.ss.usermodel.Sheet;
 import org.apache.poi.xssf.usermodel.XSSFWorkbook;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.BeforeEach;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
 import org.springframework.boot.test.context.SpringBootTest;
@@ -19,6 +23,10 @@ import org.springframework.test.context.DynamicPropertySource;
 import org.springframework.test.web.servlet.MockMvc;
 
 import java.io.ByteArrayOutputStream;
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.util.List;
+import java.util.Comparator;
 import java.time.OffsetDateTime;
 import java.time.ZoneOffset;
 
@@ -26,6 +34,7 @@ import static org.springframework.test.web.servlet.request.MockMvcRequestBuilder
 import org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder;
 
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.delete;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.put;
 import static org.hamcrest.Matchers.nullValue;
@@ -60,6 +69,21 @@ class HackathonApplicationTests {
 
     @Autowired
     private StudentRepository students;
+
+    @Autowired
+    private SubmissionRepository submissions;
+
+    @Autowired
+    private AppSettingRepository settings;
+
+    @BeforeEach
+    void clearDatabase() {
+        submissions.deleteAllInBatch();
+        students.deleteAllInBatch();
+        teams.deleteAllInBatch();
+        problems.deleteAllInBatch();
+        settings.deleteAllInBatch();
+    }
 
     @Test
     void adminCanImportExcelManageLoginAndEnableProblemsAndLeaderCanSubmit() throws Exception {
@@ -235,6 +259,255 @@ class HackathonApplicationTests {
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("{\"name\":\"Participant\",\"registerNumber\":\"22BCE0001\"}"))
                 .andExpect(status().isForbidden());
+    }
+
+    @Test
+    void scaleFixtureImportsEveryColumnAndSupportsCoreParticipantAndAdminWorkflows() throws Exception {
+        Path fixture = testDataPath("realistic-scale-teams-1000-students.csv");
+        List<String> fixtureLines = Files.readAllLines(fixture);
+        List<String> fixtureHeaders = parseCsvRecord(fixtureLines.get(0));
+        List<String> firstTeamValues = parseCsvRecord(fixtureLines.get(1));
+        MockMultipartFile scaleCsv = new MockMultipartFile("file", fixture.getFileName().toString(),
+                "text/csv", Files.readAllBytes(fixture));
+        mockMvc.perform(multipart("/api/admin/teams/import")
+                        .file(scaleCsv)
+                        .header("X-Admin-Password", ADMIN_PASSWORD))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.length()").value(250))
+                .andExpect(jsonPath("$[0].students.length()").value(4))
+                .andExpect(jsonPath("$[0].importedFields.length()").value(21))
+                .andExpect(jsonPath("$[0].importedFields[0].fieldName").value("Username"))
+                .andExpect(jsonPath("$[0].importedFields[4].fieldName").value("Programme"))
+                .andExpect(jsonPath("$[0].importedFields[7].fieldName")
+                        .value("Payment Reference Number (Check your Payment Receipt- Refer  Reference No column)"))
+                .andExpect(jsonPath("$[0].importedFields[20].fieldName").value("Their Gmail ID"));
+
+        org.junit.jupiter.api.Assertions.assertEquals(250, teams.count());
+        org.junit.jupiter.api.Assertions.assertEquals(1000, students.count());
+        mockMvc.perform(get("/api/public/config"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.teamCount").value(250))
+                .andExpect(jsonPath("$.studentCount").value(1000));
+        mockMvc.perform(get("/api/admin/teams").header("X-Admin-Password", ADMIN_PASSWORD))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.length()").value(250));
+        mockMvc.perform(get("/api/admin/problems").header("X-Admin-Password", ADMIN_PASSWORD))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.length()").value(0));
+        Team firstTeam = teams.findAll().stream()
+                .min(Comparator.comparing(Team::getTeamNumber))
+                .orElseThrow();
+        Team lastTeam = teams.findAll().stream()
+                .max(Comparator.comparing(Team::getTeamNumber))
+                .orElseThrow();
+        org.junit.jupiter.api.Assertions.assertEquals(
+                "Team Member 2 \u00e2\u20ac\u201c Name   (As per SSLC Record- USE UPPERCASE FORMAT only) ",
+                firstTeam.getImportedFields().get(11).getFieldName());
+        org.junit.jupiter.api.Assertions.assertEquals(fixtureHeaders,
+                firstTeam.getImportedFields().stream().map(field -> field.getFieldName()).toList());
+        org.junit.jupiter.api.Assertions.assertEquals(firstTeamValues,
+                firstTeam.getImportedFields().stream().map(field -> field.getFieldValue()).toList());
+        org.junit.jupiter.api.Assertions.assertEquals("MEMBER 3 TEAM 250",
+                lastTeam.getStudents().stream().filter(member -> member.getRegisterNumber().equals("26MCA1998"))
+                        .findFirst().orElseThrow().getName());
+
+        Path questionsFixture = testDataPath("realistic-scale-questions-40.csv");
+        MockMultipartFile questionCsv = new MockMultipartFile("file", "realistic-scale-questions-40.csv",
+                "text/csv", Files.readAllBytes(questionsFixture));
+        mockMvc.perform(multipart("/api/admin/problems/import")
+                        .file(questionCsv)
+                        .header("X-Admin-Password", ADMIN_PASSWORD))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.length()").value(40));
+        mockMvc.perform(get("/api/admin/problems").header("X-Admin-Password", ADMIN_PASSWORD))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.length()").value(40));
+        Problem sharedProblem = problems.findAll().get(0);
+        mockMvc.perform(put("/api/admin/problems/{problemId}/enabled", sharedProblem.getId())
+                        .header("X-Admin-Password", ADMIN_PASSWORD)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"enabled\":true}"))
+                .andExpect(status().isOk());
+
+        mockMvc.perform(put("/api/admin/teams/{teamId}/problem/{problemId}",
+                        firstTeam.getId(), sharedProblem.getId())
+                        .header("X-Admin-Password", ADMIN_PASSWORD))
+                .andExpect(status().isOk());
+        mockMvc.perform(put("/api/admin/teams/{teamId}/problem/{problemId}",
+                        lastTeam.getId(), sharedProblem.getId())
+                        .header("X-Admin-Password", ADMIN_PASSWORD))
+                .andExpect(status().isOk());
+        mockMvc.perform(put("/api/admin/teams/random-assignment")
+                        .header("X-Admin-Password", ADMIN_PASSWORD))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.length()").value(250));
+        org.junit.jupiter.api.Assertions.assertTrue(teams.findAll().stream()
+                .allMatch(team -> team.getProblem() != null));
+
+        mockMvc.perform(put("/api/admin/problems/{problemId}", sharedProblem.getId())
+                        .header("X-Admin-Password", ADMIN_PASSWORD)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"title\":\"Updated shared problem\",\"statement\":\"Updated statement\"}"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.title").value("Updated shared problem"));
+
+        mockMvc.perform(post("/api/student/login")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"name\":\"MEMBER 3 TEAM 250\",\"registerNumber\":\"26MCA1998\"}"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.teamNumber").value(250))
+                .andExpect(jsonPath("$.students.length()").value(4))
+                .andExpect(jsonPath("$.problem.id").value(sharedProblem.getId()))
+                .andExpect(jsonPath("$.leader").value(false));
+        mockMvc.perform(put("/api/student/submission")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"name\":\"MEMBER 3 TEAM 250\",\"registerNumber\":\"26MCA1998\","
+                                + "\"googleDriveLink\":\"https://drive.google.com/file/d/test\","
+                                + "\"githubLink\":\"https://github.com/example/project\"}"))
+                .andExpect(status().isForbidden());
+
+        mockMvc.perform(post("/api/student/login")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"name\":\"LEADER 250\",\"registerNumber\":\"26MCA1996\"}"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.leader").value(true));
+        mockMvc.perform(put("/api/student/submission")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"name\":\"LEADER 250\",\"registerNumber\":\"26MCA1996\","
+                                + "\"googleDriveLink\":\"https://drive.google.com/file/d/team250\","
+                                + "\"githubLink\":\"https://github.com/example/team250\"}"))
+                .andExpect(status().isOk());
+        mockMvc.perform(get("/api/admin/submissions").header("X-Admin-Password", ADMIN_PASSWORD))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$[0].team.teamNumber").value(250))
+                .andExpect(jsonPath("$[0].githubLink").value("https://github.com/example/team250"));
+
+        mockMvc.perform(delete("/api/admin/teams/{teamId}/problem", lastTeam.getId())
+                        .header("X-Admin-Password", ADMIN_PASSWORD))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.problem").value(nullValue()));
+
+        mockMvc.perform(put("/api/admin/problems/{problemId}/enabled", sharedProblem.getId())
+                        .header("X-Admin-Password", ADMIN_PASSWORD)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"enabled\":false}"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.enabled").value(false));
+        mockMvc.perform(put("/api/admin/teams/{teamId}/problem/{problemId}",
+                        lastTeam.getId(), sharedProblem.getId())
+                        .header("X-Admin-Password", ADMIN_PASSWORD))
+                .andExpect(status().isOk());
+        mockMvc.perform(post("/api/student/login")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"name\":\"LEADER 250\",\"registerNumber\":\"26MCA1996\"}"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.problem").value(nullValue()));
+
+        mockMvc.perform(post("/api/admin/problems")
+                        .header("X-Admin-Password", ADMIN_PASSWORD)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"title\":\"CRUD test\",\"statement\":\"Temporary problem\"}"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.title").value("CRUD test"));
+        Problem temporaryProblem = problems.findAll().stream()
+                .filter(problem -> "CRUD test".equals(problem.getTitle()))
+                .findFirst().orElseThrow();
+        mockMvc.perform(delete("/api/admin/problems/{problemId}", temporaryProblem.getId())
+                        .header("X-Admin-Password", ADMIN_PASSWORD))
+                .andExpect(status().isOk());
+        org.junit.jupiter.api.Assertions.assertTrue(problems.findById(temporaryProblem.getId()).isEmpty());
+
+        mockMvc.perform(post("/api/admin/teams")
+                        .header("X-Admin-Password", ADMIN_PASSWORD)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"name\":\"CRUD test team\"}"))
+                .andExpect(status().isOk());
+        Team crudTeam = teams.findAll().stream()
+                .filter(team -> "CRUD test team".equals(team.getName()))
+                .findFirst().orElseThrow();
+        mockMvc.perform(put("/api/admin/teams/{teamId}", crudTeam.getId())
+                        .header("X-Admin-Password", ADMIN_PASSWORD)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"name\":\"Renamed CRUD team\"}"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.name").value("Renamed CRUD team"));
+        mockMvc.perform(post("/api/admin/teams/{teamId}/students", crudTeam.getId())
+                        .header("X-Admin-Password", ADMIN_PASSWORD)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"name\":\"CRUD PARTICIPANT\",\"registerNumber\":\"26MCA9999\","
+                                + "\"email\":\"crud@example.test\"}"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.students.length()").value(1));
+        Student crudParticipant = students.findByRegisterNumberIgnoreCase("26MCA9999").orElseThrow();
+        mockMvc.perform(put("/api/admin/students/{studentId}", crudParticipant.getId())
+                        .header("X-Admin-Password", ADMIN_PASSWORD)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"name\":\"UPDATED PARTICIPANT\",\"registerNumber\":\"26MCA9999\","
+                                + "\"email\":\"updated@example.test\"}"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.name").value("UPDATED PARTICIPANT"))
+                .andExpect(jsonPath("$.email").value("updated@example.test"));
+        mockMvc.perform(put("/api/admin/students/{studentId}/leader", crudParticipant.getId())
+                        .header("X-Admin-Password", ADMIN_PASSWORD))
+                .andExpect(status().isOk());
+        mockMvc.perform(post("/api/student/login")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"name\":\"UPDATED PARTICIPANT\",\"registerNumber\":\"26MCA9999\"}"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.leader").value(true));
+        mockMvc.perform(delete("/api/admin/students/{studentId}", crudParticipant.getId())
+                        .header("X-Admin-Password", ADMIN_PASSWORD))
+                .andExpect(status().isOk());
+        mockMvc.perform(delete("/api/admin/teams/{teamId}", crudTeam.getId())
+                        .header("X-Admin-Password", ADMIN_PASSWORD))
+                .andExpect(status().isOk());
+
+        mockMvc.perform(delete("/api/admin/teams/{teamId}", firstTeam.getId())
+                        .header("X-Admin-Password", ADMIN_PASSWORD))
+                .andExpect(status().isOk());
+        mockMvc.perform(delete("/api/admin/teams/{teamId}", lastTeam.getId())
+                        .header("X-Admin-Password", ADMIN_PASSWORD))
+                .andExpect(status().isOk());
+        org.junit.jupiter.api.Assertions.assertEquals(248, teams.count());
+        org.junit.jupiter.api.Assertions.assertEquals(992, students.count());
+        mockMvc.perform(delete("/api/admin/teams")
+                        .header("X-Admin-Password", ADMIN_PASSWORD))
+                .andExpect(status().isOk());
+        mockMvc.perform(delete("/api/admin/problems")
+                        .header("X-Admin-Password", ADMIN_PASSWORD))
+                .andExpect(status().isOk());
+        org.junit.jupiter.api.Assertions.assertEquals(0, teams.count());
+        org.junit.jupiter.api.Assertions.assertEquals(0, students.count());
+        org.junit.jupiter.api.Assertions.assertEquals(0, problems.count());
+    }
+
+    private Path testDataPath(String filename) {
+        Path fromRepositoryRoot = Path.of("test-data", filename);
+        return Files.exists(fromRepositoryRoot) ? fromRepositoryRoot : Path.of("..", "test-data", filename);
+    }
+
+    private java.util.List<String> parseCsvRecord(String line) {
+        java.util.List<String> fields = new java.util.ArrayList<>();
+        StringBuilder field = new StringBuilder();
+        boolean quoted = false;
+        for (int i = 0; i < line.length(); i++) {
+            char character = line.charAt(i);
+            if (character == '"') {
+                if (quoted && i + 1 < line.length() && line.charAt(i + 1) == '"') {
+                    field.append('"');
+                    i++;
+                } else {
+                    quoted = !quoted;
+                }
+            } else if (character == ',' && !quoted) {
+                fields.add(field.toString());
+                field.setLength(0);
+            } else {
+                field.append(character);
+            }
+        }
+        fields.add(field.toString());
+        return fields;
     }
 
     private MockMultipartFile teamWorkbook() throws Exception {
