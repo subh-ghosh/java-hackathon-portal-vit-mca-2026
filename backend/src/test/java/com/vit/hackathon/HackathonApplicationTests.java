@@ -168,9 +168,42 @@ class HackathonApplicationTests {
     }
 
     private MockMultipartFile csvUpload(List<String> headers, List<String> row) {
-        String csv = csvLine(headers) + "\n" + csvLine(row);
+        return csvUploadRows(headers, List.of(row));
+    }
+
+    private MockMultipartFile csvUploadRows(List<String> headers, List<List<String>> rows) {
+        String csv = csvLine(headers) + "\n" + rows.stream()
+                .map(this::csvLine)
+                .collect(java.util.stream.Collectors.joining("\n"));
         return new MockMultipartFile("file", "teams.csv", "text/csv",
                 csv.getBytes(java.nio.charset.StandardCharsets.UTF_8));
+    }
+
+    @Test
+    void invalidTeamImportReturnsSpecificErrorAndDoesNotSaveAnyRows() throws Exception {
+        List<String> validRow = new ArrayList<>(java.util.Collections.nCopies(19, ""));
+        validRow.set(2, "TEST LEADER");
+        validRow.set(3, "26MCA9001");
+        List<String> extraCellRow = new ArrayList<>(validRow);
+        extraCellRow.add("unexpected");
+
+        mockMvc.perform(multipart("/api/admin/teams/import")
+                        .file(csvUploadRows(TeamRegistrationFields.LABELS, List.of(validRow, extraCellRow)))
+                        .header("X-Admin-Password", ADMIN_PASSWORD))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.message").value(
+                        org.hamcrest.Matchers.containsString("row 3 contains extra columns")));
+        org.junit.jupiter.api.Assertions.assertEquals(0, teams.count());
+        org.junit.jupiter.api.Assertions.assertEquals(0, students.count());
+
+        List<String> renamedHeaders = new ArrayList<>(TeamRegistrationFields.LABELS);
+        renamedHeaders.set(0, "Submitted at");
+        mockMvc.perform(multipart("/api/admin/teams/import")
+                        .file(csvUpload(renamedHeaders, validRow))
+                        .header("X-Admin-Password", ADMIN_PASSWORD))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.message").value(
+                        org.hamcrest.Matchers.containsString("column 1 must be exactly: Timestamp")));
     }
 
     @Test

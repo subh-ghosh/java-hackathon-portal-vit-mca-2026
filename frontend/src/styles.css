@@ -137,3 +137,4 @@ body:has(.login-shell) .mode-switch{top:20px;bottom:auto}
 .team-import-guidance li{padding-left:3px;color:#718077;font-size:.72rem;line-height:1.45;overflow-wrap:anywhere}
 .team-import-guidance code{font:inherit;color:#365542}
 @media(max-width:600px){.team-import-guidance ol{grid-template-columns:1fr;max-height:180px}}
+.admin-content>.error{position:fixed;z-index:20;top:16px;left:50%;width:min(720px,calc(100vw - 32px));transform:translateX(-50%);box-shadow:0 8px 28px #112e2530}

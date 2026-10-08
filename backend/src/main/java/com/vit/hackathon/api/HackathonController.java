@@ -88,6 +88,12 @@ public class HackathonController {
         return Map.of("teamCount", teams.count(), "studentCount", students.count());
     }
 
+    @ExceptionHandler(TeamImportException.class)
+    public ResponseEntity<Map<String, String>> handleTeamImportException(TeamImportException exception) {
+        return ResponseEntity.status(exception.getStatusCode())
+                .body(Map.of("message", exception.getReason()));
+    }
+
     @PostMapping("/student/login")
     public StudentTeamResponse login(@RequestBody LoginRequest request) {
         enforceLoginWindow();
@@ -435,27 +441,28 @@ public class HackathonController {
     }
 
     @PostMapping("/admin/teams/import")
+    @Transactional
     public List<Team> importTeams(@RequestHeader("X-Admin-Password") String password,
                                   @RequestPart("file") MultipartFile file) {
         requireAdmin(password);
         if (file.isEmpty()) {
-            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Team import file is empty");
+            throw new TeamImportException("Team import file is empty");
         }
         try (BufferedReader reader = new BufferedReader(createTeamImportReader(file))) {
             String headerLine = reader.readLine();
             if (headerLine == null) {
-                throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "CSV file has no header");
+                throw new TeamImportException("Team import file has no header row");
             }
             List<String> headers = parseCsvLine(headerLine);
             List<String> expectedHeaders = TeamRegistrationFields.LABELS;
             if (headers.size() != expectedHeaders.size()) {
-                throw new ResponseStatusException(HttpStatus.BAD_REQUEST,
+                throw new TeamImportException(
                         "Team import must contain exactly these 19 columns, in this exact order: "
                                 + String.join(" | ", expectedHeaders));
             }
             for (int i = 0; i < expectedHeaders.size(); i++) {
                 if (!expectedHeaders.get(i).equals(headers.get(i))) {
-                    throw new ResponseStatusException(HttpStatus.BAD_REQUEST,
+                    throw new TeamImportException(
                             "Team import column " + (i + 1) + " must be exactly: " + expectedHeaders.get(i)
                                     + ". Use the supplied column names and order; do not add, remove, or rename columns.");
                 }
@@ -468,7 +475,7 @@ public class HackathonController {
                 if (line.isBlank()) continue;
                 List<String> values = parseCsvLine(line);
                 if (values.size() > expectedHeaders.size()) {
-                    throw new ResponseStatusException(HttpStatus.BAD_REQUEST,
+                    throw new TeamImportException(
                             "Team import row " + rowNumber + " contains extra columns; exactly 19 are allowed");
                 }
                 List<ImportedTeamField> importedFields = new ArrayList<>(expectedHeaders.size());
@@ -477,17 +484,17 @@ public class HackathonController {
                             valueAt(values, column)));
                 }
                 if (importedFields.stream().anyMatch(this::isInvalidImportedField)) {
-                    throw new ResponseStatusException(HttpStatus.BAD_REQUEST,
+                    throw new TeamImportException(
                             "A team field exceeds its allowed length on CSV row " + rowNumber);
                 }
                 String leaderRegister = importedFieldValue(importedFields, 3);
                 if (isIgnoredRegister(leaderRegister)) {
-                    throw new ResponseStatusException(HttpStatus.BAD_REQUEST,
+                    throw new TeamImportException(
                             "Missing representative register number on CSV row " + rowNumber);
                 }
                 String leaderName = importedFieldValue(importedFields, 2);
                 if (leaderName.isBlank() || leaderName.trim().equalsIgnoreCase(leaderRegister)) {
-                    throw new ResponseStatusException(HttpStatus.BAD_REQUEST,
+                    throw new TeamImportException(
                             "Missing or invalid group leader name on CSV row " + rowNumber);
                 }
                 List<ImportedParticipant> participants = new ArrayList<>();
@@ -500,7 +507,7 @@ public class HackathonController {
                             participant.registerNumber().equalsIgnoreCase(register))) continue;
                     String name = importedFieldValue(importedFields, memberFieldIndex);
                     if (name.isBlank() || name.trim().equalsIgnoreCase(register)) {
-                        throw new ResponseStatusException(HttpStatus.BAD_REQUEST,
+                        throw new TeamImportException(
                                 "Missing or invalid name for member register number " + register
                                         + " on CSV row " + rowNumber);
                     }
@@ -522,12 +529,12 @@ public class HackathonController {
                 imported.add(teams.save(team));
             }
             if (imported.isEmpty()) {
-                throw new ResponseStatusException(HttpStatus.BAD_REQUEST,
+                throw new TeamImportException(
                         "The spreadsheet contains headers but no team rows to import");
             }
             return imported;
         } catch (IOException exception) {
-            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Could not read team import file", exception);
+            throw new TeamImportException("Could not read team import file", exception);
         }
     }
 
@@ -538,7 +545,7 @@ public class HackathonController {
         }
         try (InputStream input = file.getInputStream(); Workbook workbook = WorkbookFactory.create(input)) {
             if (workbook.getNumberOfSheets() == 0) {
-                throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "The Excel workbook has no worksheets");
+                throw new TeamImportException("The Excel workbook has no worksheets");
             }
             Sheet sheet = workbook.getSheetAt(0);
             DataFormatter formatter = new DataFormatter(Locale.ROOT);
@@ -820,6 +827,16 @@ public class HackathonController {
                 .filter(Objects::nonNull)
                 .max(Integer::compareTo)
                 .orElse(0) + 1;
+    }
+
+    private static final class TeamImportException extends ResponseStatusException {
+        private TeamImportException(String reason) {
+            super(HttpStatus.BAD_REQUEST, reason);
+        }
+
+        private TeamImportException(String reason, Throwable cause) {
+            super(HttpStatus.BAD_REQUEST, reason, cause);
+        }
     }
 
     private static Integer findColumn(Map<String, Integer> columns, String expected) {

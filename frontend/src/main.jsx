@@ -30,7 +30,9 @@ async function request(path, options = {}) {
     headers: { ...(isFormData ? {} : { 'Content-Type': 'application/json' }), ...(options.headers || {}) }
   });
   const body = await response.json().catch(() => ({}));
-  if (!response.ok) throw new Error(body.message || 'Something went wrong');
+  if (!response.ok) {
+    throw new Error(body.message || body.detail || body.title || 'Something went wrong');
+  }
   return body;
 }
 
@@ -182,18 +184,27 @@ function Admin() {
   const [importedFieldsError, setImportedFieldsError] = useState('');
   const [importedFieldsNotice, setImportedFieldsNotice] = useState('');
   const [dialog, setDialog] = useState(null);
-  const [notice, setNotice] = useState('');
+  const [notice, setNoticeState] = useState('');
+  const [noticeType, setNoticeType] = useState('success');
   const [loginSettings, setLoginSettings] = useState({ loginEnabled: true, startTime: '', endTime: '' });
   const [submissions, setSubmissions] = useState([]);
   const [downloadingSubmissions, setDownloadingSubmissions] = useState(false);
   const [loadingData, setLoadingData] = useState(Boolean(savedSession && !savedSession.expired));
   const [loadError, setLoadError] = useState(false);
   const headers = () => ({ 'X-Admin-Password': password });
+  function setNotice(message) {
+    setNoticeType('success');
+    setNoticeState(message);
+  }
+  function setErrorNotice(message) {
+    setNoticeType('error');
+    setNoticeState(message);
+  }
   useEffect(() => {
-    if (!notice) return undefined;
+    if (!notice || noticeType === 'error') return undefined;
     const timeout = window.setTimeout(() => setNotice(''), 3500);
     return () => window.clearTimeout(timeout);
-  }, [notice]);
+  }, [notice, noticeType]);
   useEffect(() => {
     if (!importDialog && !actionDialog) return undefined;
     const closeOnEscape = event => {
@@ -316,16 +327,21 @@ function Admin() {
   }
   async function importTeams(e) {
     e.preventDefault();
+    setNotice('');
     if (!csvFile) return setNotice('Choose a CSV or Excel workbook first.');
     const form = e.currentTarget;
     const formData = new FormData();
     formData.append('file', csvFile);
-    const imported = await request('/admin/teams/import', { method: 'POST', headers: headers(), body: formData });
-    setTeams([...teams, ...imported]);
-    setCsvFile(null);
-    setImportDialog(null);
-    form.reset();
-    setNotice(`${imported.length} teams imported.`);
+    try {
+      const imported = await request('/admin/teams/import', { method: 'POST', headers: headers(), body: formData });
+      setTeams([...teams, ...imported]);
+      setCsvFile(null);
+      setImportDialog(null);
+      form.reset();
+      setNotice(`${imported.length} teams imported.`);
+    } catch (error) {
+      setErrorNotice(`Team import failed: ${error.message}`);
+    }
   }
   function downloadTeamImportTemplate() {
     const csv = importedFieldLabels
