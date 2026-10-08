@@ -304,11 +304,11 @@ function Student({ team, credentials, logout }) {
         <div className="welcome">
           <span className="eyebrow">GREENOPS · TEAM SPACE</span>
           <h1>{team.name}</h1>
-          <p className="muted">Your team’s sustainability challenge, member roster and final project submission.</p>
+          <p className="muted">Your assigned problem, team roster and final project submission.</p>
           <div className="student-summary">
-            <span><small>TEAM NUMBER</small>#{team.teamNumber}</span>
-            <span><small>YOUR DETAILS</small>{team.ownName || 'Name not provided'} · {team.ownRegisterNumber}{team.ownEmail && <small>{team.ownEmail}</small>}</span>
-            <span><small>GROUP LEADER</small>{team.leaderRegisterNumber || 'Not assigned'}</span>
+            <span><small>TEAM NUMBER</small><b>#{team.teamNumber}</b></span>
+            <span><small>YOUR DETAILS</small><b>{team.ownName || 'Name not provided'} · {team.ownRegisterNumber}</b>{team.ownEmail && <small className="summary-secondary">{team.ownEmail}</small>}</span>
+            <span><small>GROUP LEADER</small><b>{team.leaderRegisterNumber || 'Not assigned'}</b></span>
           </div>
         </div>
         <div className="student-event-banner">

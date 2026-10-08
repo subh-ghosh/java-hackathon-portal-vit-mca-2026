@@ -192,6 +192,11 @@ body:has(.login-shell) .mode-switch{top:20px;bottom:auto}
 .student-event-banner span{display:flex;flex-direction:column;gap:5px;padding-left:13px;border-left:2px solid #9ac76d}
 .student-event-banner b{font:500 .65rem 'DM Mono',monospace;color:#315d40}
 .student-event-banner small{color:#718077;font-size:.67rem;line-height:1.4}
+.student-summary{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:12px;margin-top:22px}
+.student-summary>span{display:flex;min-width:0;flex-direction:column;align-items:flex-start;gap:7px;padding:15px 17px;border:1px solid #e1e9e2;border-radius:12px;background:#fff;box-shadow:0 5px 18px #112e2508}
+.student-summary>span>small:first-child{font:500 .6rem 'DM Mono',monospace;letter-spacing:.1em;color:#718779}
+.student-summary>span>b{max-width:100%;color:#21392b;font-size:.88rem;line-height:1.5;overflow-wrap:anywhere}
+.student-summary .summary-secondary{color:#7c8980;font-size:.7rem;line-height:1.4;overflow-wrap:anywhere}
 .problem-card .eyebrow{color:#4c8053}
 .submission-card .eyebrow{color:#4c8053}
 @media(max-width:1050px){
@@ -209,6 +214,7 @@ body:has(.login-shell) .mode-switch{top:20px;bottom:auto}
   .event-hero h1{font-size:clamp(3rem,10vw,4.5rem)}
   .event-login-card{width:min(100% - 36px,520px);margin:0 auto 36px}
   .student-event-banner{grid-template-columns:1fr;gap:12px;margin-top:-13px}
+  .student-summary{grid-template-columns:1fr}
 }
 @media(max-width:480px){
   .event-host{gap:13px}
