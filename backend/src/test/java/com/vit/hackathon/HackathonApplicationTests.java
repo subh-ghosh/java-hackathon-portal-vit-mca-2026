@@ -10,6 +10,8 @@ import com.vit.hackathon.repository.StudentRepository;
 import com.vit.hackathon.repository.TeamRepository;
 import org.apache.poi.ss.usermodel.Row;
 import org.apache.poi.ss.usermodel.Sheet;
+import org.apache.poi.ss.usermodel.Workbook;
+import org.apache.poi.ss.usermodel.WorkbookFactory;
 import org.apache.poi.xssf.usermodel.XSSFWorkbook;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.BeforeEach;
@@ -23,6 +25,7 @@ import org.springframework.test.context.DynamicPropertySource;
 import org.springframework.test.web.servlet.MockMvc;
 
 import java.io.ByteArrayOutputStream;
+import java.io.ByteArrayInputStream;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.List;
@@ -39,6 +42,8 @@ import static org.springframework.test.web.servlet.request.MockMvcRequestBuilder
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.put;
 import static org.hamcrest.Matchers.nullValue;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.content;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.header;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 @SpringBootTest(properties = {
@@ -193,6 +198,43 @@ class HackathonApplicationTests {
                         .header("X-Admin-Password", ADMIN_PASSWORD))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$[0].team.name").value("Team 001"));
+
+        mockMvc.perform(get("/api/admin/submissions/export"))
+                .andExpect(status().isBadRequest());
+        mockMvc.perform(get("/api/admin/submissions/export")
+                        .header("X-Admin-Password", "wrong-password"))
+                .andExpect(status().isUnauthorized());
+        byte[] exportedWorkbook = mockMvc.perform(get("/api/admin/submissions/export")
+                        .header("X-Admin-Password", ADMIN_PASSWORD))
+                .andExpect(status().isOk())
+                .andExpect(content().contentType(
+                        "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"))
+                .andExpect(header().string("Content-Disposition",
+                        org.hamcrest.Matchers.containsString("hackathon-submissions.xlsx")))
+                .andReturn()
+                .getResponse()
+                .getContentAsByteArray();
+        try (Workbook exportedFile = WorkbookFactory.create(new ByteArrayInputStream(exportedWorkbook))) {
+            Row submissionRow = exportedFile.getSheet("Submissions").getRow(1);
+            org.junit.jupiter.api.Assertions.assertEquals("Team 001", submissionRow.getCell(1).getStringCellValue());
+            org.junit.jupiter.api.Assertions.assertEquals("22BCE0001", submissionRow.getCell(3).getStringCellValue());
+            org.junit.jupiter.api.Assertions.assertEquals("https://drive.google.com/file/d/test",
+                    submissionRow.getCell(7).getStringCellValue());
+            org.junit.jupiter.api.Assertions.assertEquals("https://github.com/example/project",
+                    submissionRow.getCell(8).getStringCellValue());
+        }
+        mockMvc.perform(delete("/api/admin/submissions"))
+                .andExpect(status().isBadRequest());
+        mockMvc.perform(delete("/api/admin/submissions")
+                        .header("X-Admin-Password", "wrong-password"))
+                .andExpect(status().isUnauthorized());
+        mockMvc.perform(delete("/api/admin/submissions")
+                        .header("X-Admin-Password", ADMIN_PASSWORD))
+                .andExpect(status().isOk());
+        mockMvc.perform(get("/api/admin/submissions")
+                        .header("X-Admin-Password", ADMIN_PASSWORD))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$").isEmpty());
 
         mockMvc.perform(put("/api/student/submission")
                         .contentType(MediaType.APPLICATION_JSON)

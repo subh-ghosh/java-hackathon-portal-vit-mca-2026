@@ -16,8 +16,14 @@ import org.apache.poi.ss.usermodel.Row;
 import org.apache.poi.ss.usermodel.Sheet;
 import org.apache.poi.ss.usermodel.Workbook;
 import org.apache.poi.ss.usermodel.WorkbookFactory;
+import org.apache.poi.ss.usermodel.Cell;
+import org.apache.poi.xssf.usermodel.XSSFWorkbook;
+import org.springframework.http.HttpHeaders;
+import org.springframework.http.MediaType;
+import org.springframework.http.ResponseEntity;
 
 import java.io.BufferedReader;
+import java.io.ByteArrayOutputStream;
 import java.io.IOException;
 import java.io.InputStream;
 import java.io.InputStreamReader;
@@ -65,6 +71,11 @@ public class HackathonController {
         this.settings = settings;
         this.submissions = submissions;
         this.adminPassword = adminPassword;
+    }
+
+    private static void setCell(Row row, int column, String value) {
+        Cell cell = row.createCell(column);
+        cell.setCellValue(value == null ? "" : value);
     }
 
     private void ensureTeamNumber(Team team) {
@@ -122,6 +133,69 @@ public class HackathonController {
     public List<Submission> listSubmissions(@RequestHeader("X-Admin-Password") String password) {
         requireAdmin(password);
         return submissions.findAll();
+    }
+
+    @GetMapping("/admin/submissions/export")
+    public ResponseEntity<byte[]> exportSubmissions(@RequestHeader("X-Admin-Password") String password) {
+        requireAdmin(password);
+        try (Workbook workbook = new XSSFWorkbook(); ByteArrayOutputStream output = new ByteArrayOutputStream()) {
+            Sheet sheet = workbook.createSheet("Submissions");
+            Row header = sheet.createRow(0);
+            String[] columns = {
+                    "Team number", "Team name", "Team leader", "Leader register number", "Members",
+                    "Problem ID", "Problem title", "Google Drive link", "GitHub link", "Updated at"
+            };
+            for (int i = 0; i < columns.length; i++) {
+                header.createCell(i).setCellValue(columns[i]);
+            }
+            int rowNumber = 1;
+            for (Submission submission : submissions.findAll()) {
+                Team team = submission.getTeam();
+                Row row = sheet.createRow(rowNumber++);
+                String leaderName = team.getStudents().stream()
+                        .filter(Student::isLeader)
+                        .map(Student::getName)
+                        .findFirst()
+                        .orElse("");
+                String leaderRegisterNumber = team.getStudents().stream()
+                        .filter(Student::isLeader)
+                        .map(Student::getRegisterNumber)
+                        .findFirst()
+                        .orElse("");
+                String members = team.getStudents().stream()
+                        .map(student -> student.getName() + " (" + student.getRegisterNumber() + ")")
+                        .collect(Collectors.joining(", "));
+                setCell(row, 0, team.getTeamNumber() == null ? "" : team.getTeamNumber().toString());
+                setCell(row, 1, team.getName());
+                setCell(row, 2, leaderName);
+                setCell(row, 3, leaderRegisterNumber);
+                setCell(row, 4, members);
+                setCell(row, 5, team.getProblem() == null ? "" : team.getProblem().getId().toString());
+                setCell(row, 6, team.getProblem() == null ? "" : team.getProblem().getTitle());
+                setCell(row, 7, submission.getGoogleDriveLink());
+                setCell(row, 8, submission.getGithubLink());
+                setCell(row, 9, submission.getUpdatedAt().toString());
+            }
+            for (int i = 0; i < columns.length; i++) {
+                sheet.autoSizeColumn(i);
+            }
+            workbook.write(output);
+            return ResponseEntity.ok()
+                    .contentType(MediaType.parseMediaType(
+                            "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"))
+                    .header(HttpHeaders.CONTENT_DISPOSITION, "attachment; filename=\"hackathon-submissions.xlsx\"")
+                    .body(output.toByteArray());
+        } catch (IOException exception) {
+            throw new ResponseStatusException(HttpStatus.INTERNAL_SERVER_ERROR,
+                    "Could not generate submissions workbook", exception);
+        }
+    }
+
+    @DeleteMapping("/admin/submissions")
+    @Transactional
+    public void clearSubmissions(@RequestHeader("X-Admin-Password") String password) {
+        requireAdmin(password);
+        submissions.deleteAllInBatch();
     }
 
     @PutMapping("/student/submission")
