@@ -22,7 +22,16 @@
 .import-modal-actions{display:flex;justify-content:flex-end;gap:10px;margin-top:22px}
 .import-modal-actions button{margin:0}
 .import-modal-actions button:disabled{cursor:not-allowed;opacity:.5}
-@media(max-width:1000px){.library-card-top{align-items:flex-start;flex-direction:column;gap:16px}.library-card-top .problem-library-actions{max-width:100%;justify-content:flex-start;overflow-x:auto;padding-bottom:4px}}
+.quick-action-card{display:flex;min-width:0;align-items:center;justify-content:space-between;gap:20px}
+.quick-action-card h2{margin:8px 0}
+.quick-action-card p{margin:0}
+.quick-action-card>div{min-width:0}
+.quick-action-card>.secondary-button{flex-shrink:0}
+.action-dialog-form label{display:block;margin-top:18px;color:#53645a;font-size:.8rem;font-weight:700}
+.action-dialog-form input,.action-dialog-form textarea{display:block;width:100%;margin-top:8px;border:1px solid #dce4de;border-radius:9px;padding:13px;outline:0}
+.action-dialog-form textarea{min-height:150px;resize:vertical}
+.action-dialog-form .import-modal-actions{margin-top:24px}
+@media(max-width:1000px){.library-card-top{align-items:flex-start;flex-direction:column;gap:16px}.library-card-top .problem-library-actions{max-width:100%;justify-content:flex-start;overflow-x:auto;padding-bottom:4px}.quick-action-card{align-items:stretch;flex-direction:column}.quick-action-card>.secondary-button{width:100%}}
 @media(max-width:600px){.import-modal{padding:24px 18px}.import-file-picker{align-items:flex-start;flex-direction:column}.import-modal-actions{justify-content:stretch}.import-modal-actions button{flex:1}}
 .dialog-modal{width:min(460px,100%)}.dialog-modal label{display:block;font-size:.8rem;font-weight:700;margin-top:18px}.dialog-modal input{display:block;width:100%;border:1px solid #dce4de;border-radius:9px;padding:13px;margin-top:8px;outline:0}.dialog-modal>button{width:100%;background:#173e2c;color:#fff;padding:14px;border-radius:9px;margin-top:24px;font-weight:700}
 .imported-fields-form{margin-top:24px;border-top:1px solid #edf1ee;padding-top:18px}.imported-fields-form summary{cursor:pointer;font-weight:700;color:#416351}.imported-fields-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px;margin-top:16px}.imported-field{min-width:0;padding:10px;border:1px solid #edf1ee;border-radius:8px;font-size:.7rem}.imported-field b,.imported-field span{display:block;overflow-wrap:anywhere}.imported-field b{color:#53645a}.imported-field span{margin-top:6px;color:#718077}
