@@ -228,6 +228,103 @@ class HackathonApplicationTests {
     }
 
     @Test
+    void editingTeamRegistrationFieldsKeepsStudentAccountsAndTeamLeaderDetailsInSync() throws Exception {
+        List<ImportedTeamField> fields = teamFields("ORIGINAL LEADER", "26MCA9251", "team@example.test");
+        fields.get(4).setFieldValue("ORIGINAL MEMBER");
+        fields.get(5).setFieldValue("26MCA9252");
+        mockMvc.perform(post("/api/admin/teams")
+                        .header("X-Admin-Password", ADMIN_PASSWORD)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(new ObjectMapper().writeValueAsString(Map.of("importedFields", fields))))
+                .andExpect(status().isOk());
+        Team team = teams.findAll().get(0);
+        List<ImportedTeamField> edited = new ArrayList<>(team.getImportedFields());
+        edited.get(2).setFieldValue("UPDATED LEADER");
+        edited.get(3).setFieldValue("26mca9261");
+        edited.get(4).setFieldValue("UPDATED MEMBER");
+        edited.get(5).setFieldValue("26mca9262");
+
+        mockMvc.perform(put("/api/admin/teams/{teamId}/imported-fields", team.getId())
+                        .header("X-Admin-Password", ADMIN_PASSWORD)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(new ObjectMapper().writeValueAsString(Map.of("fields", edited))))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.students.length()").value(2))
+                .andExpect(jsonPath("$.groupLeaderRegisterNumber").value("26MCA9261"));
+        org.junit.jupiter.api.Assertions.assertTrue(students.findByRegisterNumberIgnoreCase("26MCA9251").isEmpty());
+        org.junit.jupiter.api.Assertions.assertTrue(students.findByRegisterNumberIgnoreCase("26MCA9252").isEmpty());
+        org.junit.jupiter.api.Assertions.assertEquals("UPDATED LEADER",
+                students.findByRegisterNumberIgnoreCase("26MCA9261").orElseThrow().getName());
+        org.junit.jupiter.api.Assertions.assertEquals("UPDATED MEMBER",
+                students.findByRegisterNumberIgnoreCase("26MCA9262").orElseThrow().getName());
+        org.junit.jupiter.api.Assertions.assertEquals("26MCA9261",
+                teams.findById(team.getId()).orElseThrow().getGroupLeaderRegisterNumber());
+    }
+
+    @Test
+    void leaderCannotBeDeletedUntilReplacementIsAssignedAndRosterFieldsFollowNewLeader() throws Exception {
+        List<ImportedTeamField> fields = teamFields("ORIGINAL LEADER", "26MCA9271", "team@example.test");
+        fields.get(4).setFieldValue("NEW LEADER");
+        fields.get(5).setFieldValue("26MCA9272");
+        mockMvc.perform(post("/api/admin/teams")
+                        .header("X-Admin-Password", ADMIN_PASSWORD)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(new ObjectMapper().writeValueAsString(Map.of("importedFields", fields))))
+                .andExpect(status().isOk());
+        Team team = teams.findAll().get(0);
+        Student oldLeader = students.findByRegisterNumberIgnoreCase("26MCA9271").orElseThrow();
+        Student replacement = students.findByRegisterNumberIgnoreCase("26MCA9272").orElseThrow();
+
+        mockMvc.perform(delete("/api/admin/students/{studentId}", oldLeader.getId())
+                        .header("X-Admin-Password", ADMIN_PASSWORD))
+                .andExpect(status().isConflict());
+        mockMvc.perform(put("/api/admin/students/{studentId}/leader", replacement.getId())
+                        .header("X-Admin-Password", ADMIN_PASSWORD))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.groupLeaderRegisterNumber").value("26MCA9272"))
+                .andExpect(jsonPath("$.member2RegisterNumber").value("26MCA9271"));
+        mockMvc.perform(delete("/api/admin/students/{studentId}", oldLeader.getId())
+                        .header("X-Admin-Password", ADMIN_PASSWORD))
+                .andExpect(status().isOk());
+        Team updated = teams.findById(team.getId()).orElseThrow();
+        org.junit.jupiter.api.Assertions.assertEquals(1, updated.getStudents().size());
+        org.junit.jupiter.api.Assertions.assertEquals("", updated.getMember2RegisterNumber());
+        org.junit.jupiter.api.Assertions.assertTrue(students.findById(oldLeader.getId()).isEmpty());
+    }
+
+    @Test
+    void questionImportRejectsInvalidLaterRowsWithoutSavingEarlierRows() throws Exception {
+        MockMultipartFile questions = new MockMultipartFile("file", "questions.csv", "text/csv",
+                "title,statement\nGood question,This row is valid\nMissing statement,\n"
+                        .getBytes(java.nio.charset.StandardCharsets.UTF_8));
+        mockMvc.perform(multipart("/api/admin/problems/import")
+                        .file(questions)
+                        .header("X-Admin-Password", ADMIN_PASSWORD))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.message").value(
+                        org.hamcrest.Matchers.containsString("CSV row 3")));
+        org.junit.jupiter.api.Assertions.assertEquals(0, problems.count());
+    }
+
+    @Test
+    void nullJsonBodiesReturnClientErrorsInsteadOfServerErrors() throws Exception {
+        mockMvc.perform(post("/api/student/login")
+                        .contentType(MediaType.APPLICATION_JSON).content("null"))
+                .andExpect(status().isBadRequest());
+        mockMvc.perform(put("/api/student/submission")
+                        .contentType(MediaType.APPLICATION_JSON).content("null"))
+                .andExpect(status().isBadRequest());
+        mockMvc.perform(post("/api/admin/problems")
+                        .header("X-Admin-Password", ADMIN_PASSWORD)
+                        .contentType(MediaType.APPLICATION_JSON).content("null"))
+                .andExpect(status().isBadRequest());
+        mockMvc.perform(put("/api/admin/settings")
+                        .header("X-Admin-Password", ADMIN_PASSWORD)
+                        .contentType(MediaType.APPLICATION_JSON).content("null"))
+                .andExpect(status().isBadRequest());
+    }
+
+    @Test
     void teamImportRejectsAnyHeaderOrRowShapeThatDiffersFromTheCanonicalContract() throws Exception {
         List<String> canonicalHeaders = TeamRegistrationFields.LABELS;
         List<List<String>> invalidHeaders = new ArrayList<>();
@@ -799,6 +896,7 @@ class HackathonApplicationTests {
                                 + "\"email\":\"crud@example.test\"}"))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.students.length()").value(2));
+        Student crudOriginalLeader = students.findByRegisterNumberIgnoreCase("26MCA9998").orElseThrow();
         Student crudParticipant = students.findByRegisterNumberIgnoreCase("26MCA9999").orElseThrow();
         mockMvc.perform(put("/api/admin/students/{studentId}", crudParticipant.getId())
                         .header("X-Admin-Password", ADMIN_PASSWORD)
@@ -817,6 +915,9 @@ class HackathonApplicationTests {
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.leader").value(true));
         mockMvc.perform(delete("/api/admin/students/{studentId}", crudParticipant.getId())
+                        .header("X-Admin-Password", ADMIN_PASSWORD))
+                .andExpect(status().isConflict());
+        mockMvc.perform(delete("/api/admin/students/{studentId}", crudOriginalLeader.getId())
                         .header("X-Admin-Password", ADMIN_PASSWORD))
                 .andExpect(status().isOk());
         mockMvc.perform(delete("/api/admin/teams/{teamId}", crudTeam.getId())

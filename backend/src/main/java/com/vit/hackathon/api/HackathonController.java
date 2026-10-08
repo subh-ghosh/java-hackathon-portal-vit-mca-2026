@@ -102,6 +102,9 @@ public class HackathonController {
 
     @PostMapping("/student/login")
     public StudentTeamResponse login(@RequestBody LoginRequest request) {
+        if (request == null) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Participant login details are required");
+        }
         enforceLoginWindow();
         Student student = authenticateParticipant(request.name(), request.registerNumber());
         Team team = teams.findById(student.getTeam().getId()).orElseThrow();
@@ -128,6 +131,9 @@ public class HackathonController {
     public Map<String, Object> updateAdminSettings(@RequestHeader("X-Admin-Password") String password,
                                                     @RequestBody SettingsRequest request) {
         requireAdmin(password);
+        if (request == null) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Login settings are required");
+        }
         OffsetDateTime startTime = parseOptionalTime(request.startTime(), "start");
         OffsetDateTime endTime = parseOptionalTime(request.endTime(), "end");
         if (startTime != null && endTime != null && !endTime.isAfter(startTime)) {
@@ -210,6 +216,9 @@ public class HackathonController {
 
     @PutMapping("/student/submission")
     public Submission saveSubmission(@RequestBody SubmissionRequest request) {
+        if (request == null) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Submission links are required");
+        }
         enforceLoginWindow();
         Student student = authenticateParticipant(request.name(), request.registerNumber());
         if (!student.isLeader()) throw new ResponseStatusException(HttpStatus.FORBIDDEN, "Only the group leader can submit");
@@ -243,8 +252,7 @@ public class HackathonController {
     public Problem createProblem(@RequestHeader("X-Admin-Password") String password, @RequestBody ProblemRequest request) {
         requireAdmin(password);
         Problem problem = new Problem();
-        problem.setTitle(request.title());
-        problem.setStatement(request.statement());
+        setProblemFields(problem, request);
         return problems.save(problem);
     }
 
@@ -253,6 +261,9 @@ public class HackathonController {
                                      @PathVariable Long problemId,
                                      @RequestBody EnabledRequest request) {
         requireAdmin(password);
+        if (request == null) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Problem enabled state is required");
+        }
         Problem problem = problems.findById(problemId)
                 .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Problem not found"));
         problem.setEnabled(request.enabled());
@@ -260,6 +271,7 @@ public class HackathonController {
     }
 
     @PostMapping("/admin/problems/import")
+    @Transactional
     public List<Problem> importProblems(@RequestHeader("X-Admin-Password") String password,
                                         @RequestPart("file") MultipartFile file) {
         requireAdmin(password);
@@ -279,9 +291,9 @@ public class HackathonController {
             }
             Integer titleColumn = findColumnAny(columns, "title", "problem title", "question title");
             Integer statementColumn = findColumnAny(columns, "statement", "problem statement", "question", "description");
-            if (statementColumn == null) {
+            if (statementColumn == null || Objects.equals(titleColumn, statementColumn)) {
                 throw new ResponseStatusException(HttpStatus.BAD_REQUEST,
-                        "CSV must contain a statement, problem statement, question, or description column");
+                        "CSV must contain separate title (optional) and statement columns");
             }
             List<Problem> imported = new ArrayList<>();
             String line;
@@ -300,10 +312,17 @@ public class HackathonController {
                 if (problem.getTitle() == null || problem.getTitle().isBlank()) {
                     problem.setTitle("Question " + (rowNumber - 1));
                 }
+                if (problem.getTitle().length() > 255 || statement.length() > 5000) {
+                    throw new ResponseStatusException(HttpStatus.BAD_REQUEST,
+                            "Question title or statement exceeds the allowed length on CSV row " + rowNumber);
+                }
                 problem.setStatement(statement);
-                imported.add(problems.save(problem));
+                imported.add(problem);
             }
-            return imported;
+            if (imported.isEmpty()) {
+                throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "CSV contains no question rows to import");
+            }
+            return problems.saveAll(imported);
         } catch (IOException exception) {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Could not read CSV file", exception);
         }
@@ -346,8 +365,7 @@ public class HackathonController {
                                  @PathVariable Long problemId, @RequestBody ProblemRequest request) {
         requireAdmin(password);
         Problem problem = problems.findById(problemId).orElseThrow();
-        problem.setTitle(request.title());
-        problem.setStatement(request.statement());
+        setProblemFields(problem, request);
         return problems.save(problem);
     }
 
@@ -424,6 +442,7 @@ public class HackathonController {
             }
             ensureRegisterNumberAvailable(registerNumber, null);
         }
+        normalizeRegistrationFieldValues(fields);
         team.setImportedFields(fields);
         for (int i = 0; i < participants.size(); i++) {
             ImportedParticipant participant = participants.get(i);
@@ -540,12 +559,14 @@ public class HackathonController {
                 Team team = new Team();
                 team.setTeamNumber(nextTeamNumber());
                 team.setName(String.format("Team %03d", team.getTeamNumber()));
+                normalizeRegistrationFieldValues(importedFields);
                 team.setImportedFields(importedFields);
                 for (int i = 0; i < participants.size(); i++) {
                     Student student = new Student();
                     ImportedParticipant participant = participants.get(i);
                     student.setName(participant.name().trim());
                     student.setRegisterNumber(participant.registerNumber().trim());
+                    if (i == 0) student.setEmail(blankToNull(importedFieldValue(importedFields, 11)));
                     student.setLeader(i == 0);
                     student.setTeam(team);
                     team.getStudents().add(student);
@@ -623,8 +644,138 @@ public class HackathonController {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Invalid imported team fields");
         }
         Team team = teams.findById(teamId).orElseThrow();
+        normalizeRegistrationFieldValues(request.fields());
+        validateRegistrationParticipants(request.fields());
+        syncRegistrationParticipants(team, request.fields());
         team.setImportedFields(request.fields());
         return teams.save(team);
+    }
+
+    private void validateRegistrationParticipants(List<ImportedTeamField> fields) {
+        String leaderName = importedFieldValue(fields, 2).trim();
+        String leaderRegister = normalizeRegisterNumber(importedFieldValue(fields, 3));
+        if (leaderName.isBlank() || leaderRegister.isBlank() || leaderName.equalsIgnoreCase(leaderRegister)) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST,
+                    "Group leader name and register number are required and must identify the participant");
+        }
+
+        Set<String> registerNumbers = new HashSet<>();
+        for (int slot = 0; slot < 4; slot++) {
+            int nameIndex = slot == 0 ? 2 : 4 + (slot - 1) * 2;
+            int registerIndex = nameIndex + 1;
+            String name = importedFieldValue(fields, nameIndex).trim();
+            String register = normalizeRegisterNumber(importedFieldValue(fields, registerIndex));
+            if (slot > 0 && name.isBlank() != register.isBlank()) {
+                throw new ResponseStatusException(HttpStatus.BAD_REQUEST,
+                        "For team member " + (slot + 1) + ", enter both the name and register number or leave both blank");
+            }
+            if (register.isBlank()) continue;
+            if (name.isBlank() || name.equalsIgnoreCase(register)) {
+                throw new ResponseStatusException(HttpStatus.BAD_REQUEST,
+                        "Participant names must be actual names and register numbers must be present");
+            }
+            if (!registerNumbers.add(register)) {
+                throw new ResponseStatusException(HttpStatus.CONFLICT,
+                        "Register number " + register + " appears more than once in this team");
+            }
+        }
+    }
+
+    private void normalizeRegistrationFieldValues(List<ImportedTeamField> fields) {
+        for (int registerIndex : new int[]{3, 5, 7, 9}) {
+            setImportedFieldValue(fields, registerIndex,
+                    normalizeRegisterNumber(importedFieldValue(fields, registerIndex)));
+        }
+    }
+
+    private void syncRegistrationParticipants(Team team, List<ImportedTeamField> fields) {
+        List<Student> currentStudents = new ArrayList<>(team.getStudents());
+        List<Student> leaders = currentStudents.stream().filter(Student::isLeader).toList();
+        if (leaders.size() > 1) {
+            throw new ResponseStatusException(HttpStatus.CONFLICT,
+                    "This team has multiple leaders; resolve the roster before editing registration details");
+        }
+        int[] nameIndexes = {2, 4, 6, 8};
+        int[] registerIndexes = {3, 5, 7, 9};
+        Student leader = leaders.isEmpty()
+                ? findTeamStudent(currentStudents, Set.of(), normalizeRegisterNumber(
+                        importedFieldValue(team.getImportedFields(), registerIndexes[0])))
+                : leaders.get(0);
+        List<Student> matched = new ArrayList<>();
+        matched.add(leader);
+        Set<Long> usedStudentIds = new HashSet<>();
+        if (leader != null) usedStudentIds.add(leader.getId());
+        for (int slot = 1; slot < 4; slot++) {
+            String oldRegister = normalizeRegisterNumber(
+                    importedFieldValue(team.getImportedFields(), registerIndexes[slot]));
+            String newRegister = normalizeRegisterNumber(importedFieldValue(fields, registerIndexes[slot]));
+            Student member = findTeamStudent(currentStudents, usedStudentIds, oldRegister);
+            if (member == null && !newRegister.isBlank()) {
+                member = findTeamStudent(currentStudents, usedStudentIds, newRegister);
+            }
+            matched.add(member);
+            if (member != null) usedStudentIds.add(member.getId());
+        }
+        for (int slot = 0; slot < 4; slot++) {
+            String name = importedFieldValue(fields, nameIndexes[slot]).trim();
+            String register = normalizeRegisterNumber(importedFieldValue(fields, registerIndexes[slot]));
+            Student student = matched.get(slot);
+            if (slot > 0 && register.isBlank()) {
+                String oldRegister = normalizeRegisterNumber(
+                        importedFieldValue(team.getImportedFields(), registerIndexes[slot]));
+                if (student != null && !oldRegister.isBlank()) {
+                    team.getStudents().remove(student);
+                    student.setTeam(null);
+                }
+                continue;
+            }
+            ensureRegisterNumberAvailable(register, student == null ? null : student.getId());
+            if (student == null) {
+                student = new Student();
+                student.setTeam(team);
+                team.getStudents().add(student);
+            }
+            student.setName(name);
+            student.setRegisterNumber(register);
+            student.setLeader(slot == 0);
+            if (slot == 0) student.setEmail(blankToNull(importedFieldValue(fields, 11)));
+        }
+    }
+
+    private Student findTeamStudent(List<Student> teamStudents, Set<Long> usedStudentIds, String registerNumber) {
+        if (registerNumber.isBlank()) return null;
+        return teamStudents.stream()
+                .filter(student -> !usedStudentIds.contains(student.getId()))
+                .filter(student -> !student.isLeader())
+                .filter(student -> registerNumber.equals(normalizeRegisterNumber(student.getRegisterNumber())))
+                .findFirst()
+                .orElse(null);
+    }
+
+    private String blankToNull(String value) {
+        String trimmed = value == null ? "" : value.trim();
+        return trimmed.isBlank() ? null : trimmed;
+    }
+
+    private void setProblemFields(Problem problem, ProblemRequest request) {
+        if (request == null || request.title() == null || request.title().isBlank()
+                || request.statement() == null || request.statement().isBlank()) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST,
+                    "Problem title and statement are required");
+        }
+        String title = request.title().trim();
+        String statement = request.statement().trim();
+        if (title.length() > 255 || statement.length() > 5000) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST,
+                    "Problem title must be 255 characters or fewer and statement 5000 characters or fewer");
+        }
+        problem.setTitle(title);
+        problem.setStatement(statement);
+    }
+
+    private void setImportedFieldValue(List<ImportedTeamField> fields, int columnIndex, String value) {
+        fields.stream().filter(field -> field.getColumnIndex() == columnIndex)
+                .findFirst().ifPresent(field -> field.setFieldValue(value == null ? "" : value));
     }
 
     private boolean isInvalidImportedField(ImportedTeamField field) {
@@ -672,25 +823,95 @@ public class HackathonController {
         Student student = new Student();
         applyStudent(student, request);
         ensureRegisterNumberAvailable(student.getRegisterNumber(), null);
+        List<ImportedTeamField> fields = team.getImportedFields();
+        int availableNameIndex = -1;
+        for (int nameIndex : new int[]{4, 6, 8}) {
+            if (importedFieldValue(fields, nameIndex + 1).isBlank()) {
+                availableNameIndex = nameIndex;
+                break;
+            }
+        }
+        if (availableNameIndex < 0) {
+            throw new ResponseStatusException(HttpStatus.CONFLICT,
+                    "A team can have at most four participants; remove a member before adding another");
+        }
+        setImportedFieldValue(fields, availableNameIndex, student.getName());
+        setImportedFieldValue(fields, availableNameIndex + 1, student.getRegisterNumber());
+        team.setImportedFields(fields);
         student.setTeam(team);
         team.getStudents().add(student);
         return teams.save(team);
     }
 
     @PutMapping("/admin/students/{studentId}")
+    @Transactional
     public Student updateStudent(@RequestHeader("X-Admin-Password") String password,
                                  @PathVariable Long studentId, @RequestBody StudentRequest request) {
         requireAdmin(password);
         Student student = students.findById(studentId).orElseThrow();
-        applyStudent(student, request);
-        ensureRegisterNumberAvailable(student.getRegisterNumber(), student.getId());
+        String previousRegister = normalizeRegisterNumber(student.getRegisterNumber());
+        Student candidate = new Student();
+        applyStudent(candidate, request);
+        ensureRegisterNumberAvailable(candidate.getRegisterNumber(), student.getId());
+        student.setName(candidate.getName());
+        student.setRegisterNumber(candidate.getRegisterNumber());
+        student.setEmail(candidate.getEmail());
+        if (student.getTeam() != null) {
+            syncStudentRegistrationFields(student.getTeam(), student, previousRegister);
+        }
         return students.save(student);
     }
 
     @DeleteMapping("/admin/students/{studentId}")
+    @Transactional
     public void deleteStudent(@RequestHeader("X-Admin-Password") String password, @PathVariable Long studentId) {
         requireAdmin(password);
-        students.deleteById(studentId);
+        Student student = students.findById(studentId)
+                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Participant not found"));
+        if (student.isLeader()) {
+            throw new ResponseStatusException(HttpStatus.CONFLICT,
+                    "Assign another team member as leader before deleting this participant");
+        }
+        Team team = student.getTeam();
+        if (team != null) {
+            clearRegistrationSlot(team, student);
+            team.getStudents().remove(student);
+            student.setTeam(null);
+            teams.save(team);
+        } else {
+            students.delete(student);
+        }
+    }
+
+    private void clearRegistrationSlot(Team team, Student student) {
+        List<ImportedTeamField> fields = team.getImportedFields();
+        String register = normalizeRegisterNumber(student.getRegisterNumber());
+        for (int registerIndex : new int[]{5, 7, 9}) {
+            if (register.equals(normalizeRegisterNumber(importedFieldValue(fields, registerIndex)))) {
+                setImportedFieldValue(fields, registerIndex - 1, "");
+                setImportedFieldValue(fields, registerIndex, "");
+                team.setImportedFields(fields);
+                return;
+            }
+        }
+    }
+
+    private void syncStudentRegistrationFields(Team team, Student student, String previousRegister) {
+        List<ImportedTeamField> fields = team.getImportedFields();
+        if (student.isLeader()) {
+            setImportedFieldValue(fields, 11, student.getEmail());
+            team.setImportedFields(fields);
+            syncLeaderRegistrationFields(team, student);
+            return;
+        }
+        for (int registerIndex : new int[]{5, 7, 9}) {
+            if (previousRegister.equals(normalizeRegisterNumber(importedFieldValue(fields, registerIndex)))) {
+                setImportedFieldValue(fields, registerIndex - 1, student.getName());
+                setImportedFieldValue(fields, registerIndex, student.getRegisterNumber());
+                team.setImportedFields(fields);
+                return;
+            }
+        }
     }
 
     @PutMapping("/admin/students/{studentId}/leader")
@@ -709,7 +930,29 @@ public class HackathonController {
             leader.setTeam(team);
         }
         team.getStudents().forEach(student -> student.setLeader(student.getId().equals(studentId)));
+        syncLeaderRegistrationFields(team, leader);
         return teams.save(team);
+    }
+
+    private void syncLeaderRegistrationFields(Team team, Student leader) {
+        List<Student> members = team.getStudents().stream()
+                .filter(student -> !student.getId().equals(leader.getId()))
+                .toList();
+        if (members.size() > 3) {
+            throw new ResponseStatusException(HttpStatus.CONFLICT,
+                    "A team cannot have more than four participants");
+        }
+        List<ImportedTeamField> fields = team.getImportedFields();
+        setImportedFieldValue(fields, 2, leader.getName());
+        setImportedFieldValue(fields, 3, leader.getRegisterNumber());
+        for (int slot = 1; slot <= 3; slot++) {
+            int nameIndex = 4 + (slot - 1) * 2;
+            int registerIndex = nameIndex + 1;
+            Student member = slot <= members.size() ? members.get(slot - 1) : null;
+            setImportedFieldValue(fields, nameIndex, member == null ? "" : member.getName());
+            setImportedFieldValue(fields, registerIndex, member == null ? "" : member.getRegisterNumber());
+        }
+        team.setImportedFields(fields);
     }
 
     @PutMapping("/admin/teams/{teamId}/problem/{problemId}")
@@ -767,6 +1010,11 @@ public class HackathonController {
         if (name.equalsIgnoreCase(registerNumber)) {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST,
                     "Participant name must be their actual name, not their register number");
+        }
+        if (name.length() > 255 || registerNumber.length() > 80
+                || (request.email() != null && request.email().trim().length() > 320)) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST,
+                    "Participant name, register number, or email exceeds its allowed length");
         }
         student.setName(name);
         student.setRegisterNumber(registerNumber);

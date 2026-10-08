@@ -14,6 +14,7 @@ public class Student {
     private String registerNumber;
     @Column(nullable = false)
     private String name;
+    @Column(length = 320)
     private String email;
     @Column(nullable = false)
     private boolean leader = false;
