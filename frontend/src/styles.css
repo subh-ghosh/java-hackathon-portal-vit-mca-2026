@@ -198,6 +198,8 @@ body:has(.login-shell) .mode-switch{top:20px;bottom:auto}
 .student-summary>span>b{max-width:100%;color:#21392b;font-size:.88rem;line-height:1.5;overflow-wrap:anywhere}
 .student-summary .summary-secondary{color:#7c8980;font-size:.7rem;line-height:1.4;overflow-wrap:anywhere}
 .problem-card .eyebrow{color:#4c8053}
+.problem-card-actions{display:flex;align-items:center;gap:9px}
+.problem-card-actions .small-button{white-space:nowrap}
 .submission-card .eyebrow{color:#4c8053}
 @media(max-width:1050px){
   .login-shell{grid-template-columns:1.1fr .9fr}
@@ -215,6 +217,10 @@ body:has(.login-shell) .mode-switch{top:20px;bottom:auto}
   .event-login-card{width:min(100% - 36px,520px);margin:0 auto 36px}
   .student-event-banner{grid-template-columns:1fr;gap:12px;margin-top:-13px}
   .student-summary{grid-template-columns:1fr}
+}
+@media(max-width:420px){
+  .problem-card .card-top{align-items:flex-start;gap:10px;flex-direction:column}
+  .problem-card-actions{width:100%;justify-content:space-between}
 }
 @media(max-width:480px){
   .event-host{gap:13px}
