@@ -13,8 +13,9 @@
 
 .admin-actions>.card{min-width:0;height:fit-content}
 .admin-actions{grid-template-columns:repeat(2,minmax(0,1fr))}
-.csv-form-top{display:flex;align-items:center;justify-content:space-between;gap:12px}
-.csv-form-top button{width:auto;flex-shrink:0;padding:10px 14px}
+.library-import-form{display:flex;align-items:center;gap:8px;min-width:0}
+.library-import-form input{width:180px;max-width:25vw;font-size:.68rem;color:#718077}
+.library-import-form button{white-space:nowrap}
 @media(max-width:800px){.admin-actions{grid-template-columns:1fr}}
 .inline-form{display:flex;flex-direction:column;align-items:stretch;gap:14px}
 .inline-form .eyebrow{margin-bottom:6px}
