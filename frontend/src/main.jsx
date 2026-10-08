@@ -96,8 +96,8 @@ function Login({ onLogin, onAdmin }) {
         <div className="event-host">
           <img className="login-logo" src="/vit-logo-transparent.png" alt="Vellore Institute of Technology" />
           <div>
-            <span className="eyebrow">SCHOOL OF COMPUTER SCIENCE ENGINEERING</span>
-            <span className="event-host-subtitle">and Information Systems · VIT Vellore</span>
+            <span className="eyebrow">School of Computer Science Engineering and Information Systems</span>
+            <span className="event-host-subtitle">VIT Vellore</span>
           </div>
         </div>
         <div className="event-title-lockup">

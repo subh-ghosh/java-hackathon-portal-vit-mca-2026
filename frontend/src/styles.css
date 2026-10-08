@@ -146,7 +146,7 @@ body:has(.login-shell) .mode-switch{top:20px;bottom:auto}
 .event-hero:after{position:absolute;z-index:-1;content:"";width:340px;height:340px;right:-190px;bottom:12%;border:1px solid #b5ef6520;border-radius:50%;box-shadow:0 0 0 36px #b5ef6508,0 0 0 72px #b5ef6505}
 .event-host{display:flex;align-items:center;gap:20px;margin-bottom:38px}
 .event-host .login-logo{width:120px;max-width:35%;margin:0;padding-right:20px;border-right:1px solid #ffffff35}
-.event-host .eyebrow{display:block;max-width:270px;font-size:.61rem;line-height:1.7}
+.event-host .eyebrow{display:block;max-width:none;font-size:.61rem;line-height:1.7}
 .event-host-subtitle{display:block;margin-top:5px;color:#aec2b5;font-size:.78rem}
 .event-title-lockup{display:flex;align-items:baseline;gap:14px;flex-wrap:wrap;margin-bottom:18px}
 .event-name{font-size:clamp(1.8rem,3vw,2.5rem);font-weight:800;letter-spacing:-.065em;color:#f3f8f1}
