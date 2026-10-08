@@ -157,6 +157,18 @@ public class HackathonController {
         return settingsPayload();
     }
 
+    @PutMapping("/admin/settings/pause")
+    @Transactional
+    public Map<String, Object> setParticipantAccessPaused(@RequestHeader("X-Admin-Password") String password,
+                                                          @RequestBody PauseRequest request) {
+        requireAdmin(password);
+        if (request == null) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Pause state is required");
+        }
+        saveSetting("login-paused", Boolean.toString(request.paused()));
+        return settingsPayload();
+    }
+
     @GetMapping("/admin/submissions")
     public List<Submission> listSubmissions(@RequestHeader("X-Admin-Password") String password) {
         requireAdmin(password);
@@ -1167,6 +1179,7 @@ public class HackathonController {
     public record ImportedFieldsRequest(List<ImportedTeamField> fields) {}
     public record StudentRequest(String name, String registerNumber, String email) {}
     public record SettingsRequest(boolean loginEnabled, String startTime, String endTime) {}
+    public record PauseRequest(boolean paused) {}
     public record SubmissionRequest(String username, String registerNumber, String googleDriveLink, String githubLink) {}
     public record EnabledRequest(boolean enabled) {}
     private record ImportedParticipant(String registerNumber, String name) {}
@@ -1202,6 +1215,7 @@ public class HackathonController {
     private Map<String, Object> settingsPayload() {
         Map<String, Object> payload = new HashMap<>();
         payload.put("loginEnabled", Boolean.parseBoolean(settingValue("login-enabled", "true")));
+        payload.put("accessPaused", Boolean.parseBoolean(settingValue("login-paused", "false")));
         payload.put("startTime", localTime(settingValue("login-start", "")));
         payload.put("endTime", localTime(settingValue("login-end", "")));
         return payload;
@@ -1224,6 +1238,9 @@ public class HackathonController {
     }
 
     private void enforceLoginWindow() {
+        if (Boolean.parseBoolean(settingValue("login-paused", "false"))) {
+            throw new ResponseStatusException(HttpStatus.FORBIDDEN, "Participant access is temporarily paused by the coordinator");
+        }
         String start = settingValue("login-start", "");
         String end = settingValue("login-end", "");
         boolean scheduled = !start.isBlank() || !end.isBlank();

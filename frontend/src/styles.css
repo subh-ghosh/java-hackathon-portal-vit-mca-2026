@@ -58,6 +58,9 @@
 .settings-form{margin-bottom:22px}
 .settings-form .card-top{align-items:center}
 .settings-form .card-top button{background:#173e2c;color:#fff;padding:12px 16px;border-radius:9px;font-weight:700}
+.login-window-actions{display:flex;align-items:center;gap:9px}
+.settings-form .card-top .pause-access-button{background:#fff;color:#416351;border:1px solid #dce4de}
+.settings-form .card-top .pause-access-button:disabled{cursor:wait;opacity:.6}
 .checkbox-label{display:flex;align-items:center;gap:10px;margin:18px 0;color:#365542;font-size:.85rem;font-weight:700}
 .checkbox-label input{width:18px;height:18px;accent-color:#34794d}
 .settings-fields{display:grid;grid-template-columns:1fr 1fr;gap:16px}
@@ -70,7 +73,7 @@
 .submission-card label{margin-top:18px}
 .submission-card button{margin-top:20px}
 .table-wrap a{color:#34794d;font-weight:700}
-@media(max-width:600px){.settings-fields{grid-template-columns:1fr}.settings-form .card-top{align-items:flex-start;gap:12px;flex-direction:column}.settings-form .card-top button{width:100%}}
+@media(max-width:600px){.settings-fields{grid-template-columns:1fr}.settings-form .card-top{align-items:flex-start;gap:12px;flex-direction:column}.login-window-actions{width:100%;flex-direction:column}.settings-form .card-top button{width:100%}}
 
 /* Shared interaction and spacing rules across participant and coordinator screens. */
 :root{--page:#f5f7f3;--surface:#fff;--ink:#17221b;--muted:#718077;--line:#dce4de;--brand:#173e2c;--accent:#b5ef65;--radius-card:18px;--radius-control:10px;--section-gap:22px}

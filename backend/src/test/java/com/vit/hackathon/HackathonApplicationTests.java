@@ -929,6 +929,41 @@ class HackathonApplicationTests {
                         .content("{\"username\":\"updated@example.test\",\"registerNumber\":\"22BCE0001\"}"))
                 .andExpect(status().isOk());
 
+        mockMvc.perform(put("/api/admin/settings/pause")
+                        .header("X-Admin-Password", ADMIN_PASSWORD)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"paused\":true}"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.accessPaused").value(true))
+                .andExpect(jsonPath("$.startTime").isNotEmpty())
+                .andExpect(jsonPath("$.endTime").isNotEmpty());
+        mockMvc.perform(put("/api/admin/settings/pause")
+                        .header("X-Admin-Password", "incorrect-password")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"paused\":false}"))
+                .andExpect(status().isUnauthorized());
+        mockMvc.perform(post("/api/student/login")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"username\":\"updated@example.test\",\"registerNumber\":\"22BCE0001\"}"))
+                .andExpect(status().isForbidden());
+        mockMvc.perform(put("/api/student/submission")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"username\":\"updated@example.test\",\"registerNumber\":\"22BCE0001\","
+                                + "\"googleDriveLink\":\"https://drive.google.com/file/d/test\","
+                                + "\"githubLink\":\"https://github.com/example/project\"}"))
+                .andExpect(status().isForbidden());
+
+        mockMvc.perform(put("/api/admin/settings/pause")
+                        .header("X-Admin-Password", ADMIN_PASSWORD)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"paused\":false}"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.accessPaused").value(false));
+        mockMvc.perform(post("/api/student/login")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"username\":\"updated@example.test\",\"registerNumber\":\"22BCE0001\"}"))
+                .andExpect(status().isOk());
+
         mockMvc.perform(put("/api/admin/settings")
                         .header("X-Admin-Password", ADMIN_PASSWORD)
                         .contentType(MediaType.APPLICATION_JSON)
