@@ -91,7 +91,7 @@ function Login({ onLogin, onAdmin }) {
   }
   return (
     <main className="login-shell">
-      <button type="button" className="mode-switch" onClick={onAdmin}>Admin dashboard</button>
+      <button type="button" className="mode-switch" onClick={onAdmin}>Coordinator Login</button>
       <section className="hero event-hero">
         <div className="event-host">
           <img className="login-logo" src="/vit-logo-transparent.png" alt="Vellore Institute of Technology" />
@@ -883,7 +883,7 @@ function App() {
     return team;
   };
   const switchMode = () => { setMode(mode === 'admin' ? 'student' : 'admin'); logout(); };
-  return <>{mode === 'admin' ? <Admin /> : session ? <Student team={session.team} credentials={session.credentials} logout={logout} refreshSession={refreshParticipantSession} /> : <Login onLogin={onLogin} onAdmin={switchMode} />}{mode === 'student' && sessionExpired && <div className="session-expired"><div className="card"><h2>Participant session expired</h2><p>Your session has expired for security. Please sign in again.</p><button onClick={logout}>Sign out</button></div></div>}{(mode === 'admin' || session) && <button className="mode-switch" onClick={switchMode}>{mode === 'admin' ? 'Participant login' : 'Admin dashboard'}</button>}</>;
+  return <>{mode === 'admin' ? <Admin /> : session ? <Student team={session.team} credentials={session.credentials} logout={logout} refreshSession={refreshParticipantSession} /> : <Login onLogin={onLogin} onAdmin={switchMode} />}{mode === 'student' && sessionExpired && <div className="session-expired"><div className="card"><h2>Participant session expired</h2><p>Your session has expired for security. Please sign in again.</p><button onClick={logout}>Sign out</button></div></div>}{(mode === 'admin' || session) && <button className="mode-switch" onClick={switchMode}>{mode === 'admin' ? 'Participant login' : 'Coordinator Login'}</button>}</>;
 }
 
 createRoot(document.getElementById('root')).render(<App />);
