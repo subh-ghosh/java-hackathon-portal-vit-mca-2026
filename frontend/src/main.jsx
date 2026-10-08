@@ -433,10 +433,18 @@ function Admin() {
         setNotice('Participant name is required for sign-in.');
         return;
       }
-      const updated = await request(`/admin/students/${dialog.student.id}`, { method: 'PUT', headers: headers(), body: JSON.stringify(values) });
-      setTeams(teams.map(team => ({ ...team, students: team.students.map(item => item.id === updated.id ? updated : item) })));
-      setEditingTeam(current => current ? { ...current, students: current.students.map(item => item.id === updated.id ? updated : item) } : current);
-      setNotice('Student updated.');
+      try {
+        const updated = await request(`/admin/students/${dialog.student.id}`, { method: 'PUT', headers: headers(), body: JSON.stringify(values) });
+        const team = teams.find(item => item.students.some(student => student.id === updated.id));
+        if (team) {
+          const refreshedTeam = await request(`/admin/teams/${team.id}`, { headers: headers() });
+          setTeams(current => current.map(item => item.id === refreshedTeam.id ? refreshedTeam : item));
+          setEditingTeam(current => current?.id === refreshedTeam.id ? refreshedTeam : current);
+        }
+        setNotice('Student updated.');
+      } catch (error) {
+        setErrorNotice(error.message);
+      }
     }
     setDialog(null);
   }
@@ -453,8 +461,12 @@ function Admin() {
     if (!confirm('Delete this student?')) return;
     try {
       await request(`/admin/students/${id}`, { method: 'DELETE', headers: headers() });
-      setTeams(teams.map(team => ({ ...team, students: team.students.filter(item => item.id !== id) })));
-      setEditingTeam(current => current ? { ...current, students: current.students.filter(item => item.id !== id) } : current);
+      const team = teams.find(item => item.students.some(student => student.id === id));
+      if (team) {
+        const refreshedTeam = await request(`/admin/teams/${team.id}`, { headers: headers() });
+        setTeams(current => current.map(item => item.id === refreshedTeam.id ? refreshedTeam : item));
+        setEditingTeam(current => current?.id === refreshedTeam.id ? refreshedTeam : current);
+      }
       setNotice('Participant deleted.');
     } catch (error) {
       setErrorNotice(error.message);

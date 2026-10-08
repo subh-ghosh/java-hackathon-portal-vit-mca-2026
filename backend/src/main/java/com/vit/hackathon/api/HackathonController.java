@@ -107,7 +107,13 @@ public class HackathonController {
         }
         enforceLoginWindow();
         Student student = authenticateParticipant(request.name(), request.registerNumber());
-        Team team = teams.findById(student.getTeam().getId()).orElseThrow();
+        if (student.getTeam() == null || student.getTeam().getId() == null) {
+            throw new ResponseStatusException(HttpStatus.CONFLICT,
+                    "Participant is not assigned to a team. Contact the coordinator.");
+        }
+        Team team = teams.findById(student.getTeam().getId())
+                .orElseThrow(() -> new ResponseStatusException(HttpStatus.CONFLICT,
+                        "Participant team is unavailable. Contact the coordinator."));
         ensureTeamNumber(team);
         String leaderRegisterNumber = team.getStudents().stream()
                 .filter(Student::isLeader)
@@ -128,6 +134,7 @@ public class HackathonController {
     }
 
     @PutMapping("/admin/settings")
+    @Transactional
     public Map<String, Object> updateAdminSettings(@RequestHeader("X-Admin-Password") String password,
                                                     @RequestBody SettingsRequest request) {
         requireAdmin(password);
@@ -242,6 +249,15 @@ public class HackathonController {
         return allTeams;
     }
 
+    @GetMapping("/admin/teams/{teamId}")
+    public Team getTeam(@RequestHeader("X-Admin-Password") String password, @PathVariable Long teamId) {
+        requireAdmin(password);
+        Team team = teams.findById(teamId)
+                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Team not found"));
+        ensureTeamNumber(team);
+        return team;
+    }
+
     @GetMapping("/admin/problems")
     public List<Problem> listProblems(@RequestHeader("X-Admin-Password") String password) {
         requireAdmin(password);
@@ -280,14 +296,22 @@ public class HackathonController {
         }
         try (BufferedReader reader = new BufferedReader(new InputStreamReader(
                 file.getInputStream(), StandardCharsets.UTF_8))) {
-            String headerLine = reader.readLine();
-            if (headerLine == null) {
+            List<List<String>> records = parseCsv(reader);
+            if (records.isEmpty()) {
                 throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "CSV file has no header");
             }
-            List<String> headers = parseCsvLine(headerLine);
+            List<String> headers = records.get(0);
+            if (headers.stream().anyMatch(String::isBlank)) {
+                throw new ResponseStatusException(HttpStatus.BAD_REQUEST,
+                        "CSV header contains an empty column name");
+            }
             Map<String, Integer> columns = new HashMap<>();
             for (int i = 0; i < headers.size(); i++) {
-                columns.put(normalize(headers.get(i)), i);
+                String normalizedHeader = normalize(headers.get(i));
+                if (columns.putIfAbsent(normalizedHeader, i) != null) {
+                    throw new ResponseStatusException(HttpStatus.BAD_REQUEST,
+                            "CSV contains duplicate column names: " + headers.get(i));
+                }
             }
             Integer titleColumn = findColumnAny(columns, "title", "problem title", "question title");
             Integer statementColumn = findColumnAny(columns, "statement", "problem statement", "question", "description");
@@ -296,12 +320,15 @@ public class HackathonController {
                         "CSV must contain separate title (optional) and statement columns");
             }
             List<Problem> imported = new ArrayList<>();
-            String line;
-            int rowNumber = 1;
-            while ((line = reader.readLine()) != null) {
-                rowNumber++;
-                if (line.isBlank()) continue;
-                List<String> values = parseCsvLine(line);
+            for (int recordIndex = 1; recordIndex < records.size(); recordIndex++) {
+                List<String> values = records.get(recordIndex);
+                int rowNumber = recordIndex + 1;
+                if (values.stream().allMatch(String::isBlank)) continue;
+                if (values.size() != headers.size()) {
+                    throw new ResponseStatusException(HttpStatus.BAD_REQUEST,
+                            "Question CSV row " + rowNumber + " has " + values.size()
+                                    + " columns; expected " + headers.size());
+                }
                 String statement = valueAt(values, statementColumn);
                 if (statement.isBlank()) {
                     throw new ResponseStatusException(HttpStatus.BAD_REQUEST,
@@ -329,6 +356,7 @@ public class HackathonController {
     }
 
     @PutMapping("/admin/teams/random-assignment")
+    @Transactional
     public List<Team> randomlyAssignProblems(@RequestHeader("X-Admin-Password") String password) {
         requireAdmin(password);
         List<Team> allTeams = teams.findAll();
@@ -364,15 +392,18 @@ public class HackathonController {
     public Problem updateProblem(@RequestHeader("X-Admin-Password") String password,
                                  @PathVariable Long problemId, @RequestBody ProblemRequest request) {
         requireAdmin(password);
-        Problem problem = problems.findById(problemId).orElseThrow();
+        Problem problem = problems.findById(problemId)
+                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Problem not found"));
         setProblemFields(problem, request);
         return problems.save(problem);
     }
 
     @DeleteMapping("/admin/problems/{problemId}")
+    @Transactional
     public void deleteProblem(@RequestHeader("X-Admin-Password") String password, @PathVariable Long problemId) {
         requireAdmin(password);
-        Problem problem = problems.findById(problemId).orElseThrow();
+        Problem problem = problems.findById(problemId)
+                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Problem not found"));
         teams.findAll().stream().filter(team -> problem.equals(team.getProblem())).forEach(team -> {
             team.setProblem(null);
             teams.save(team);
@@ -381,6 +412,7 @@ public class HackathonController {
     }
 
     @DeleteMapping("/admin/problems")
+    @Transactional
     public void clearProblems(@RequestHeader("X-Admin-Password") String password) {
         requireAdmin(password);
         List<Team> allTeams = teams.findAll();
@@ -477,11 +509,11 @@ public class HackathonController {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Team import file is empty");
         }
         try (BufferedReader reader = new BufferedReader(createTeamImportReader(file))) {
-            String headerLine = reader.readLine();
-            if (headerLine == null) {
+            List<List<String>> records = parseCsv(reader);
+            if (records.isEmpty()) {
                 throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Team import file has no header row");
             }
-            List<String> headers = parseCsvLine(headerLine);
+            List<String> headers = records.get(0);
             List<String> expectedHeaders = TeamRegistrationFields.LABELS;
             if (headers.size() != expectedHeaders.size()) {
                 throw new ResponseStatusException(HttpStatus.BAD_REQUEST,
@@ -497,15 +529,14 @@ public class HackathonController {
             }
             List<Team> imported = new ArrayList<>();
             Map<String, Integer> importedRegisterRows = new HashMap<>();
-            String line;
-            int rowNumber = 1;
-            while ((line = reader.readLine()) != null) {
-                rowNumber++;
-                if (line.isBlank()) continue;
-                List<String> values = parseCsvLine(line);
-                if (values.size() > expectedHeaders.size()) {
+            for (int recordIndex = 1; recordIndex < records.size(); recordIndex++) {
+                List<String> values = records.get(recordIndex);
+                int rowNumber = recordIndex + 1;
+                if (values.stream().allMatch(String::isBlank)) continue;
+                if (values.size() != expectedHeaders.size()) {
                     throw new ResponseStatusException(HttpStatus.BAD_REQUEST,
-                            "Team import row " + rowNumber + " contains extra columns; exactly 19 are allowed");
+                            "Team import row " + rowNumber + " has " + values.size()
+                                    + " columns; exactly 19 are required");
                 }
                 List<ImportedTeamField> importedFields = new ArrayList<>(expectedHeaders.size());
                 for (int column = 0; column < expectedHeaders.size(); column++) {
@@ -624,7 +655,8 @@ public class HackathonController {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST,
                     "Team name is required and must be 120 characters or fewer");
         }
-        Team team = teams.findById(teamId).orElseThrow();
+        Team team = teams.findById(teamId)
+                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Team not found"));
         team.setName(request.name().trim());
         return teams.save(team);
     }
@@ -643,7 +675,8 @@ public class HackathonController {
                 != request.fields().size()) {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Invalid imported team fields");
         }
-        Team team = teams.findById(teamId).orElseThrow();
+        Team team = teams.findById(teamId)
+                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Team not found"));
         normalizeRegistrationFieldValues(request.fields());
         validateRegistrationParticipants(request.fields());
         syncRegistrationParticipants(team, request.fields());
@@ -801,13 +834,17 @@ public class HackathonController {
     }
 
     @DeleteMapping("/admin/teams/{teamId}")
+    @Transactional
     public void deleteTeam(@RequestHeader("X-Admin-Password") String password, @PathVariable Long teamId) {
         requireAdmin(password);
+        Team team = teams.findById(teamId)
+                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Team not found"));
         submissions.findByTeamId(teamId).ifPresent(submissions::delete);
-        teams.deleteById(teamId);
+        teams.delete(team);
     }
 
     @DeleteMapping("/admin/teams")
+    @Transactional
     public void clearTeams(@RequestHeader("X-Admin-Password") String password) {
         requireAdmin(password);
         submissions.deleteAllInBatch();
@@ -819,7 +856,8 @@ public class HackathonController {
     public Team addStudent(@RequestHeader("X-Admin-Password") String password,
                            @PathVariable Long teamId, @RequestBody StudentRequest request) {
         requireAdmin(password);
-        Team team = teams.findById(teamId).orElseThrow();
+        Team team = teams.findById(teamId)
+                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Team not found"));
         Student student = new Student();
         applyStudent(student, request);
         ensureRegisterNumberAvailable(student.getRegisterNumber(), null);
@@ -848,7 +886,8 @@ public class HackathonController {
     public Student updateStudent(@RequestHeader("X-Admin-Password") String password,
                                  @PathVariable Long studentId, @RequestBody StudentRequest request) {
         requireAdmin(password);
-        Student student = students.findById(studentId).orElseThrow();
+        Student student = students.findById(studentId)
+                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Participant not found"));
         String previousRegister = normalizeRegisterNumber(student.getRegisterNumber());
         Student candidate = new Student();
         applyStudent(candidate, request);
@@ -919,7 +958,8 @@ public class HackathonController {
     public Team assignLeader(@RequestHeader("X-Admin-Password") String password,
                              @PathVariable Long studentId) {
         requireAdmin(password);
-        Student leader = students.findById(studentId).orElseThrow();
+        Student leader = students.findById(studentId)
+                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Participant not found"));
         Team team = leader.getTeam();
         if (team == null) {
             team = teams.findAll().stream()
@@ -956,18 +996,23 @@ public class HackathonController {
     }
 
     @PutMapping("/admin/teams/{teamId}/problem/{problemId}")
+    @Transactional
     public Team assignProblem(@RequestHeader("X-Admin-Password") String password,
                               @PathVariable Long teamId, @PathVariable Long problemId) {
         requireAdmin(password);
-        Team team = teams.findById(teamId).orElseThrow();
-        team.setProblem(problems.findById(problemId).orElseThrow());
+        Team team = teams.findById(teamId)
+                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Team not found"));
+        team.setProblem(problems.findById(problemId)
+                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Problem not found")));
         return teams.save(team);
     }
 
     @DeleteMapping("/admin/teams/{teamId}/problem")
+    @Transactional
     public Team unassignProblem(@RequestHeader("X-Admin-Password") String password, @PathVariable Long teamId) {
         requireAdmin(password);
-        Team team = teams.findById(teamId).orElseThrow();
+        Team team = teams.findById(teamId)
+                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Team not found"));
         team.setProblem(null);
         return teams.save(team);
     }
@@ -1170,27 +1215,82 @@ public class HackathonController {
         return value == null ? "" : value.trim().toLowerCase(Locale.ROOT).replaceAll("[^a-z0-9]+", " ").trim();
     }
 
-    private static List<String> parseCsvLine(String line) {
+    private static List<List<String>> parseCsv(Reader reader) throws IOException {
+        List<List<String>> records = new ArrayList<>();
         List<String> values = new ArrayList<>();
         StringBuilder current = new StringBuilder();
         boolean quoted = false;
-        for (int i = 0; i < line.length(); i++) {
-            char character = line.charAt(i);
-            if (character == '"') {
-                if (quoted && i + 1 < line.length() && line.charAt(i + 1) == '"') {
-                    current.append('"');
-                    i++;
+        boolean closedQuote = false;
+        boolean firstCharacter = true;
+        int character;
+        while ((character = reader.read()) != -1) {
+            char value = (char) character;
+            if (firstCharacter) {
+                firstCharacter = false;
+                if (value == '\uFEFF') continue;
+            }
+            if (quoted) {
+                if (value == '"') {
+                    reader.mark(1);
+                    int next = reader.read();
+                    if (next == '"') {
+                        current.append('"');
+                    } else {
+                        quoted = false;
+                        closedQuote = true;
+                        if (next != -1) reader.reset();
+                    }
                 } else {
-                    quoted = !quoted;
+                    current.append(value);
                 }
-            } else if (character == ',' && !quoted) {
+            } else if (closedQuote && value == ',') {
                 values.add(current.toString());
                 current.setLength(0);
+                closedQuote = false;
+            } else if (closedQuote && (value == '\n' || value == '\r')) {
+                if (value == '\r') {
+                    reader.mark(1);
+                    if (reader.read() != '\n') reader.reset();
+                }
+                values.add(current.toString());
+                records.add(values);
+                values = new ArrayList<>();
+                current.setLength(0);
+                closedQuote = false;
+            } else if (closedQuote && Character.isWhitespace(value)) {
+                continue;
+            } else if (closedQuote) {
+                throw new ResponseStatusException(HttpStatus.BAD_REQUEST,
+                        "Malformed CSV: unexpected character after a quoted field");
+            } else if (value == '"') {
+                if (current.length() != 0) {
+                    throw new ResponseStatusException(HttpStatus.BAD_REQUEST,
+                            "Malformed CSV: quote inside an unquoted field");
+                }
+                quoted = true;
+            } else if (value == ',') {
+                values.add(current.toString());
+                current.setLength(0);
+            } else if (value == '\n' || value == '\r') {
+                if (value == '\r') {
+                    reader.mark(1);
+                    if (reader.read() != '\n') reader.reset();
+                }
+                values.add(current.toString());
+                records.add(values);
+                values = new ArrayList<>();
+                current.setLength(0);
             } else {
-                current.append(character);
+                current.append(value);
             }
         }
-        values.add(current.toString());
-        return values;
+        if (quoted) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Malformed CSV: unterminated quoted field");
+        }
+        if (!values.isEmpty() || current.length() > 0 || closedQuote) {
+            values.add(current.toString());
+            records.add(values);
+        }
+        return records;
     }
 }

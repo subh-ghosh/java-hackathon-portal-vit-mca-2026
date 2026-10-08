@@ -307,6 +307,104 @@ class HackathonApplicationTests {
     }
 
     @Test
+    void questionCsvImportSupportsQuotedMultilineFieldsAndRejectsWrongWidthRows() throws Exception {
+        MockMultipartFile validQuestions = new MockMultipartFile("file", "questions.csv", "text/csv",
+                "title,statement\n\"Green, campus\",\"Line one\nLine two\"\n"
+                        .getBytes(java.nio.charset.StandardCharsets.UTF_8));
+        mockMvc.perform(multipart("/api/admin/problems/import")
+                        .file(validQuestions)
+                        .header("X-Admin-Password", ADMIN_PASSWORD))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$[0].title").value("Green, campus"))
+                .andExpect(jsonPath("$[0].statement").value("Line one\nLine two"));
+
+        MockMultipartFile wrongWidth = new MockMultipartFile("file", "questions.csv", "text/csv",
+                "title,statement\nAnother question\n"
+                        .getBytes(java.nio.charset.StandardCharsets.UTF_8));
+        mockMvc.perform(multipart("/api/admin/problems/import")
+                        .file(wrongWidth)
+                        .header("X-Admin-Password", ADMIN_PASSWORD))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.message").value(
+                        org.hamcrest.Matchers.containsString("row 2 has 1 columns")));
+
+        MockMultipartFile duplicateHeaders = new MockMultipartFile("file", "questions.csv", "text/csv",
+                "title,title,statement\nA,B,Question\n".getBytes(java.nio.charset.StandardCharsets.UTF_8));
+        mockMvc.perform(multipart("/api/admin/problems/import")
+                        .file(duplicateHeaders)
+                        .header("X-Admin-Password", ADMIN_PASSWORD))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.message").value(
+                        org.hamcrest.Matchers.containsString("duplicate column names")));
+
+        MockMultipartFile malformedCsv = new MockMultipartFile("file", "questions.csv", "text/csv",
+                "title,statement\n\"Unclosed,Question\n".getBytes(java.nio.charset.StandardCharsets.UTF_8));
+        mockMvc.perform(multipart("/api/admin/problems/import")
+                        .file(malformedCsv)
+                        .header("X-Admin-Password", ADMIN_PASSWORD))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.message").value(
+                        org.hamcrest.Matchers.containsString("unterminated quoted field")));
+        org.junit.jupiter.api.Assertions.assertEquals(1, problems.count());
+    }
+
+    @Test
+    void teamImportSupportsMultilineCellsAndRejectsMissingCells() throws Exception {
+        List<String> row = teamRow("MULTILINE LEADER", "26MCA9281", "team@example.test");
+        row.set(14, "First campus line\nSecond campus line");
+        mockMvc.perform(multipart("/api/admin/teams/import")
+                        .file(csvUploadRows(TeamRegistrationFields.LABELS, List.of(row)))
+                        .header("X-Admin-Password", ADMIN_PASSWORD))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$[0].institution").value("First campus line\nSecond campus line"));
+
+        List<String> shortenedRow = new ArrayList<>(teamRow("SHORT ROW LEADER", "26MCA9282", "team@example.test"));
+        shortenedRow.remove(shortenedRow.size() - 1);
+        mockMvc.perform(multipart("/api/admin/teams/import")
+                        .file(csvUploadRows(TeamRegistrationFields.LABELS, List.of(shortenedRow)))
+                        .header("X-Admin-Password", ADMIN_PASSWORD))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.message").value(
+                        org.hamcrest.Matchers.containsString("row 2 has 18 columns")));
+        org.junit.jupiter.api.Assertions.assertEquals(1, teams.count());
+    }
+
+    @Test
+    void participantWithMissingTeamGetsActionableConflictAndUnknownAdminIdsReturnNotFound() throws Exception {
+        Student orphan = new Student();
+        orphan.setName("ORPHAN PARTICIPANT");
+        orphan.setRegisterNumber("26MCA9283");
+        students.saveAndFlush(orphan);
+
+        mockMvc.perform(post("/api/student/login")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"name\":\"ORPHAN PARTICIPANT\",\"registerNumber\":\"26MCA9283\"}"))
+                .andExpect(status().isConflict())
+                .andExpect(jsonPath("$.message").value(
+                        org.hamcrest.Matchers.containsString("not assigned to a team")));
+        mockMvc.perform(delete("/api/admin/problems/{problemId}", 99999)
+                        .header("X-Admin-Password", ADMIN_PASSWORD))
+                .andExpect(status().isNotFound())
+                .andExpect(jsonPath("$.message").value("Problem not found"));
+        mockMvc.perform(put("/api/admin/teams/{teamId}/problem/{problemId}", 99999, 99999)
+                        .header("X-Admin-Password", ADMIN_PASSWORD))
+                .andExpect(status().isNotFound())
+                .andExpect(jsonPath("$.message").value("Team not found"));
+        Team team = createTeam("REFRESH TEAM LEADER", "26MCA9284", "refresh@example.test");
+        mockMvc.perform(get("/api/admin/teams/{teamId}", team.getId())
+                        .header("X-Admin-Password", ADMIN_PASSWORD))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.id").value(team.getId()));
+        mockMvc.perform(get("/api/admin/teams/{teamId}", 99999)
+                        .header("X-Admin-Password", ADMIN_PASSWORD))
+                .andExpect(status().isNotFound());
+        mockMvc.perform(delete("/api/admin/teams/{teamId}", 99999)
+                        .header("X-Admin-Password", ADMIN_PASSWORD))
+                .andExpect(status().isNotFound())
+                .andExpect(jsonPath("$.message").value("Team not found"));
+    }
+
+    @Test
     void nullJsonBodiesReturnClientErrorsInsteadOfServerErrors() throws Exception {
         mockMvc.perform(post("/api/student/login")
                         .contentType(MediaType.APPLICATION_JSON).content("null"))
@@ -411,7 +509,7 @@ class HackathonApplicationTests {
                         .header("X-Admin-Password", ADMIN_PASSWORD))
                 .andExpect(status().isBadRequest())
                 .andExpect(jsonPath("$.message").value(
-                        org.hamcrest.Matchers.containsString("row 3 contains extra columns")));
+                        org.hamcrest.Matchers.containsString("row 3 has 20 columns")));
         org.junit.jupiter.api.Assertions.assertEquals(0, teams.count());
         org.junit.jupiter.api.Assertions.assertEquals(0, students.count());
 
