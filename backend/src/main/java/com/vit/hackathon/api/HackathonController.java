@@ -365,9 +365,75 @@ public class HackathonController {
     public Team createTeam(@RequestHeader("X-Admin-Password") String password, @RequestBody TeamRequest request) {
         requireAdmin(password);
         Team team = new Team();
-        team.setName(request.name());
+        if (request.importedFields() == null) {
+            if (request.name() == null || request.name().isBlank()) {
+                throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Team name is required");
+            }
+            team.setName(request.name().trim());
+        } else {
+            List<ImportedTeamField> fields = request.importedFields();
+            if (fields.size() != 19 || fields.stream().anyMatch(field -> field == null
+                    || field.getColumnIndex() < 0 || field.getColumnIndex() >= 19
+                    || field.getFieldName() == null || field.getFieldName().isBlank()
+                    || (field.getFieldValue() != null && field.getFieldValue().length() > 5000))
+                    || fields.stream().map(ImportedTeamField::getColumnIndex).distinct().count() != 19) {
+                throw new ResponseStatusException(HttpStatus.BAD_REQUEST,
+                        "All 19 team form fields must be provided with unique indexes");
+            }
+            String leaderName = importedFieldValue(fields, 2).trim();
+            String leaderRegister = importedFieldValue(fields, 3).trim();
+            if (leaderName.isBlank() || leaderRegister.isBlank()) {
+                throw new ResponseStatusException(HttpStatus.BAD_REQUEST,
+                        "Group leader name and register number are required");
+            }
+            List<ImportedParticipant> participants = new ArrayList<>();
+            participants.add(new ImportedParticipant(leaderRegister, leaderName));
+            for (int member = 2; member <= 4; member++) {
+                String memberName = importedFieldValue(fields, 4 + (member - 2) * 2).trim();
+                String memberRegister = importedFieldValue(fields, 5 + (member - 2) * 2).trim();
+                if (memberName.isBlank() != memberRegister.isBlank()) {
+                    throw new ResponseStatusException(HttpStatus.BAD_REQUEST,
+                            "Both name and register number are required for team member " + member);
+                }
+                if (!memberRegister.isBlank()) {
+                    participants.add(new ImportedParticipant(memberRegister, memberName));
+                }
+            }
+            if (participants.stream().map(ImportedParticipant::registerNumber).distinct().count()
+                    != participants.size()) {
+                throw new ResponseStatusException(HttpStatus.BAD_REQUEST,
+                        "Each participant must have a unique register number");
+            }
+            for (ImportedParticipant participant : participants) {
+                if (students.findByRegisterNumberIgnoreCase(participant.registerNumber()).isPresent()) {
+                    throw new ResponseStatusException(HttpStatus.CONFLICT,
+                            "Register number is already assigned: " + participant.registerNumber());
+                }
+            }
+            team.setImportedFields(fields);
+            for (int i = 0; i < participants.size(); i++) {
+                ImportedParticipant participant = participants.get(i);
+                Student student = new Student();
+                student.setName(participant.name());
+                student.setRegisterNumber(participant.registerNumber());
+                student.setEmail(i == 0 ? importedFieldValue(fields, 11).trim() : null);
+                student.setLeader(i == 0);
+                student.setTeam(team);
+                team.getStudents().add(student);
+            }
+        }
         team.setTeamNumber(nextTeamNumber());
+        if (team.getName() == null) team.setName(String.format("Team %03d", team.getTeamNumber()));
         return teams.save(team);
+    }
+
+    private String importedFieldValue(List<ImportedTeamField> fields, int columnIndex) {
+        return fields.stream()
+                .filter(field -> field.getColumnIndex() == columnIndex)
+                .map(ImportedTeamField::getFieldValue)
+                .filter(Objects::nonNull)
+                .findFirst()
+                .orElse("");
     }
 
     @PostMapping("/admin/teams/import")
@@ -647,7 +713,7 @@ public class HackathonController {
                                       String ownName, String ownEmail, String leaderRegisterNumber, Problem problem,
                                       List<Student> students, boolean leader, Submission submission) {}
     public record ProblemRequest(String title, String statement) {}
-    public record TeamRequest(String name) {}
+    public record TeamRequest(String name, List<ImportedTeamField> importedFields) {}
     public record ImportedFieldsRequest(List<ImportedTeamField> fields) {}
     public record StudentRequest(String name, String registerNumber, String email) {}
     public record SettingsRequest(boolean loginEnabled, String startTime, String endTime) {}

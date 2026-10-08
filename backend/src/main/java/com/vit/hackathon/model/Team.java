@@ -17,9 +17,8 @@ public class Team {
     private Problem problem;
     @OneToMany(mappedBy = "team", cascade = CascadeType.ALL, orphanRemoval = true, fetch = FetchType.EAGER)
     private List<Student> students = new ArrayList<>();
-    @ElementCollection(fetch = FetchType.EAGER)
-    @CollectionTable(name = "team_imported_fields", joinColumns = @JoinColumn(name = "team_id"))
-    @OrderColumn(name = "column_order")
+    @Convert(converter = ImportedTeamFieldsConverter.class)
+    @Column(name = "imported_fields", columnDefinition = "TEXT")
     private List<ImportedTeamField> importedFields = new ArrayList<>();
     public Long getId() { return id; }
     public String getName() { return name; }

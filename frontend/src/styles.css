@@ -127,3 +127,8 @@ body:has(.login-shell) .mode-switch{top:20px;bottom:auto}
   .problem-row{align-items:flex-start;flex-direction:column}
   .row-actions{width:100%;flex-wrap:wrap}
 }
+.import-modal:has(.team-create-form){width:min(960px,100%);max-height:90vh;overflow-y:auto}
+.team-create-fields{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:0 18px}
+.team-create-fields label{min-width:0;line-height:1.5}
+.team-create-fields input{min-width:0}
+@media(max-width:600px){.import-modal:has(.team-create-form){max-height:94vh}.team-create-fields{grid-template-columns:1fr}}

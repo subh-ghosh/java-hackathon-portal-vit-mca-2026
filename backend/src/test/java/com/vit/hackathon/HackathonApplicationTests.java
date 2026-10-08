@@ -5,6 +5,7 @@ import com.vit.hackathon.model.ImportedTeamField;
 import com.vit.hackathon.model.Problem;
 import com.vit.hackathon.model.Student;
 import com.vit.hackathon.model.Team;
+import com.vit.hackathon.config.ImportedTeamFieldsMigration;
 import com.vit.hackathon.repository.AppSettingRepository;
 import com.vit.hackathon.repository.ProblemRepository;
 import com.vit.hackathon.repository.SubmissionRepository;
@@ -25,6 +26,8 @@ import org.springframework.mock.web.MockMultipartFile;
 import org.springframework.test.context.DynamicPropertyRegistry;
 import org.springframework.test.context.DynamicPropertySource;
 import org.springframework.test.web.servlet.MockMvc;
+import org.springframework.jdbc.core.JdbcTemplate;
+import org.springframework.boot.DefaultApplicationArguments;
 
 import java.io.ByteArrayOutputStream;
 import java.io.ByteArrayInputStream;
@@ -85,6 +88,12 @@ class HackathonApplicationTests {
     @Autowired
     private AppSettingRepository settings;
 
+    @Autowired
+    private JdbcTemplate jdbcTemplate;
+
+    @Autowired
+    private ImportedTeamFieldsMigration importedTeamFieldsMigration;
+
     @BeforeEach
     void clearDatabase() {
         submissions.deleteAllInBatch();
@@ -92,6 +101,54 @@ class HackathonApplicationTests {
         teams.deleteAllInBatch();
         problems.deleteAllInBatch();
         settings.deleteAllInBatch();
+    }
+
+    @Test
+    void manualTeamCreationStoresAllFieldsAndCreatesParticipantRoster() throws Exception {
+        List<ImportedTeamField> fields = new ArrayList<>();
+        for (int index = 0; index < 19; index++) {
+            fields.add(new ImportedTeamField(index, "Field " + index, ""));
+        }
+        fields.get(2).setFieldValue("TEAM LEADER");
+        fields.get(3).setFieldValue("26MCA9001");
+        fields.get(4).setFieldValue("TEAM MEMBER");
+        fields.get(5).setFieldValue("26MCA9002");
+        fields.get(11).setFieldValue("leader@example.test");
+
+        mockMvc.perform(post("/api/admin/teams")
+                        .header("X-Admin-Password", ADMIN_PASSWORD)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(new ObjectMapper().writeValueAsString(Map.of("importedFields", fields))))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.name").value("Team 001"))
+                .andExpect(jsonPath("$.importedFields.length()").value(19))
+                .andExpect(jsonPath("$.students.length()").value(2))
+                .andExpect(jsonPath("$.students[0].leader").value(true))
+                .andExpect(jsonPath("$.students[0].email").value("leader@example.test"))
+                .andExpect(jsonPath("$.students[1].registerNumber").value("26MCA9002"));
+    }
+
+    @Test
+    void legacyImportedFieldsAreMigratedIntoTeamsColumnBeforeLegacyTableIsDropped() {
+        Team team = new Team();
+        team.setName("Legacy team");
+        team.setTeamNumber(1);
+        team = teams.save(team);
+        jdbcTemplate.execute("CREATE TABLE team_imported_fields (team_id BIGINT NOT NULL, column_order INTEGER NOT NULL, "
+                + "column_index INTEGER NOT NULL, field_name VARCHAR(1000), field_value VARCHAR(5000))");
+        jdbcTemplate.update("INSERT INTO team_imported_fields (team_id, column_order, column_index, field_name, field_value) "
+                + "VALUES (?, ?, ?, ?, ?)", team.getId(), 0, 0, "Legacy extra field", "preserve this value");
+
+        importedTeamFieldsMigration.run(new DefaultApplicationArguments(new String[0]));
+
+        Team migrated = teams.findById(team.getId()).orElseThrow();
+        org.junit.jupiter.api.Assertions.assertEquals("Legacy extra field",
+                migrated.getImportedFields().get(0).getFieldName());
+        org.junit.jupiter.api.Assertions.assertEquals("preserve this value",
+                migrated.getImportedFields().get(0).getFieldValue());
+        org.junit.jupiter.api.Assertions.assertEquals(0,
+                jdbcTemplate.queryForObject("SELECT COUNT(*) FROM INFORMATION_SCHEMA.TABLES "
+                        + "WHERE LOWER(TABLE_NAME) = 'team_imported_fields'", Integer.class));
     }
 
     @Test
