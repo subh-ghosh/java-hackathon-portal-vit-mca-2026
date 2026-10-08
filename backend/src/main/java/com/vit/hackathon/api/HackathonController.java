@@ -374,8 +374,8 @@ public class HackathonController {
             List<ImportedTeamField> fields = request.importedFields();
             if (fields.size() != 19 || fields.stream().anyMatch(field -> field == null
                     || field.getColumnIndex() < 0 || field.getColumnIndex() >= 19
-                    || field.getFieldName() == null || field.getFieldName().isBlank()
-                    || (field.getFieldValue() != null && field.getFieldValue().length() > 5000))
+                    || !TeamRegistrationFields.LABELS.get(field.getColumnIndex()).equals(field.getFieldName())
+                    || isInvalidImportedField(field))
                     || fields.stream().map(ImportedTeamField::getColumnIndex).distinct().count() != 19) {
                 throw new ResponseStatusException(HttpStatus.BAD_REQUEST,
                         "All 19 team form fields must be provided with unique indexes");
@@ -476,6 +476,10 @@ public class HackathonController {
                 if (line.isBlank()) continue;
                 List<String> values = parseCsvLine(line);
                 List<ImportedTeamField> importedFields = uniqueImportedFields(headers, values);
+                if (importedFields.stream().anyMatch(this::isInvalidImportedField)) {
+                    throw new ResponseStatusException(HttpStatus.BAD_REQUEST,
+                            "A team field exceeds its allowed length on CSV row " + rowNumber);
+                }
                 String leaderRegister = valueAt(values, representativeColumn);
                 if (isIgnoredRegister(leaderRegister)) {
                     throw new ResponseStatusException(HttpStatus.BAD_REQUEST,
@@ -575,18 +579,36 @@ public class HackathonController {
                                          @PathVariable Long teamId, @RequestBody ImportedFieldsRequest request) {
         requireAdmin(password);
         if (request == null || request.fields() == null
-                || request.fields().stream().anyMatch(field -> field == null
-                || field.getColumnIndex() < 0 || field.getFieldName() == null
-                || field.getFieldName().length() > 1000
-                || (field.getFieldValue() != null && field.getFieldValue().length() > 5000))
+                || request.fields().stream().anyMatch(this::isInvalidImportedField)
                 || request.fields().stream().map(ImportedTeamField::getColumnIndex).distinct().count()
                 != request.fields().size()) {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Invalid imported team fields");
         }
         Team team = teams.findById(teamId).orElseThrow();
-        team.getImportedFields().clear();
-        team.getImportedFields().addAll(request.fields());
+        team.setImportedFields(request.fields());
         return teams.save(team);
+    }
+
+    private boolean isInvalidImportedField(ImportedTeamField field) {
+        if (field == null || field.getColumnIndex() < 0 || field.getFieldName() == null
+                || field.getFieldName().isBlank() || field.getFieldName().length() > 1000
+                || (field.getFieldValue() != null && field.getFieldValue().length() > 5000)) {
+            return true;
+        }
+        int fieldIndex = TeamRegistrationFields.indexOf(field.getFieldName());
+        if (fieldIndex < 0 || field.getFieldValue() == null) return false;
+        int maxLength = switch (fieldIndex) {
+            case 0 -> 100;
+            case 1, 11 -> 320;
+            case 2, 4, 6, 8 -> 255;
+            case 3, 5, 7, 9 -> 80;
+            case 10 -> 50;
+            case 12 -> 100;
+            case 13, 14, 15, 16 -> 255;
+            case 17, 18 -> 120;
+            default -> 5000;
+        };
+        return field.getFieldValue().length() > maxLength;
     }
 
     @DeleteMapping("/admin/teams/{teamId}")

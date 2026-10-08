@@ -5,7 +5,7 @@ import com.vit.hackathon.model.ImportedTeamField;
 import com.vit.hackathon.model.Problem;
 import com.vit.hackathon.model.Student;
 import com.vit.hackathon.model.Team;
-import com.vit.hackathon.config.ImportedTeamFieldsMigration;
+import com.vit.hackathon.config.LegacyTeamFieldsCleanup;
 import com.vit.hackathon.repository.AppSettingRepository;
 import com.vit.hackathon.repository.ProblemRepository;
 import com.vit.hackathon.repository.SubmissionRepository;
@@ -92,7 +92,7 @@ class HackathonApplicationTests {
     private JdbcTemplate jdbcTemplate;
 
     @Autowired
-    private ImportedTeamFieldsMigration importedTeamFieldsMigration;
+    private LegacyTeamFieldsCleanup legacyTeamFieldsCleanup;
 
     @BeforeEach
     void clearDatabase() {
@@ -107,7 +107,7 @@ class HackathonApplicationTests {
     void manualTeamCreationStoresAllFieldsAndCreatesParticipantRoster() throws Exception {
         List<ImportedTeamField> fields = new ArrayList<>();
         for (int index = 0; index < 19; index++) {
-            fields.add(new ImportedTeamField(index, "Field " + index, ""));
+            fields.add(new ImportedTeamField(index, com.vit.hackathon.model.TeamRegistrationFields.LABELS.get(index), ""));
         }
         fields.get(2).setFieldValue("TEAM LEADER");
         fields.get(3).setFieldValue("26MCA9001");
@@ -125,30 +125,28 @@ class HackathonApplicationTests {
                 .andExpect(jsonPath("$.students.length()").value(2))
                 .andExpect(jsonPath("$.students[0].leader").value(true))
                 .andExpect(jsonPath("$.students[0].email").value("leader@example.test"))
-                .andExpect(jsonPath("$.students[1].registerNumber").value("26MCA9002"));
+                .andExpect(jsonPath("$.students[1].registerNumber").value("26MCA9002"))
+                .andExpect(jsonPath("$.groupLeaderName").value("TEAM LEADER"))
+                .andExpect(jsonPath("$.groupLeaderRegisterNumber").value("26MCA9001"))
+                .andExpect(jsonPath("$.member2Name").value("TEAM MEMBER"))
+                .andExpect(jsonPath("$.primaryEmail").value("leader@example.test"));
+        org.junit.jupiter.api.Assertions.assertEquals("TEAM LEADER",
+                jdbcTemplate.queryForObject("SELECT group_leader_name FROM teams WHERE id = ?",
+                        String.class, teams.findAll().get(0).getId()));
     }
 
     @Test
-    void legacyImportedFieldsAreMigratedIntoTeamsColumnBeforeLegacyTableIsDropped() {
-        Team team = new Team();
-        team.setName("Legacy team");
-        team.setTeamNumber(1);
-        team = teams.save(team);
-        jdbcTemplate.execute("CREATE TABLE team_imported_fields (team_id BIGINT NOT NULL, column_order INTEGER NOT NULL, "
-                + "column_index INTEGER NOT NULL, field_name VARCHAR(1000), field_value VARCHAR(5000))");
-        jdbcTemplate.update("INSERT INTO team_imported_fields (team_id, column_order, column_index, field_name, field_value) "
-                + "VALUES (?, ?, ?, ?, ?)", team.getId(), 0, 0, "Legacy extra field", "preserve this value");
-
-        importedTeamFieldsMigration.run(new DefaultApplicationArguments(new String[0]));
-
-        Team migrated = teams.findById(team.getId()).orElseThrow();
-        org.junit.jupiter.api.Assertions.assertEquals("Legacy extra field",
-                migrated.getImportedFields().get(0).getFieldName());
-        org.junit.jupiter.api.Assertions.assertEquals("preserve this value",
-                migrated.getImportedFields().get(0).getFieldValue());
+    void obsoleteImportedFieldStorageIsRemoved() {
+        jdbcTemplate.execute("ALTER TABLE teams ADD COLUMN imported_fields TEXT");
+        jdbcTemplate.execute("CREATE TABLE team_imported_fields (team_id BIGINT NOT NULL)");
+        legacyTeamFieldsCleanup.run(new DefaultApplicationArguments(new String[0]));
         org.junit.jupiter.api.Assertions.assertEquals(0,
                 jdbcTemplate.queryForObject("SELECT COUNT(*) FROM INFORMATION_SCHEMA.TABLES "
                         + "WHERE LOWER(TABLE_NAME) = 'team_imported_fields'", Integer.class));
+        org.junit.jupiter.api.Assertions.assertEquals(0,
+                jdbcTemplate.queryForObject("SELECT COUNT(*) FROM INFORMATION_SCHEMA.COLUMNS "
+                        + "WHERE LOWER(TABLE_NAME) = 'teams' AND LOWER(COLUMN_NAME) = 'imported_fields'",
+                        Integer.class));
     }
 
     @Test
@@ -170,12 +168,12 @@ class HackathonApplicationTests {
                 .andExpect(status().isOk())
                         .andExpect(jsonPath("$[0].students.length()").value(4))
                         .andExpect(jsonPath("$[0].importedFields.length()").value(21))
-                        .andExpect(jsonPath("$[0].importedFields[0].fieldName").value("Username"))
-                        .andExpect(jsonPath("$[0].importedFields[0].fieldValue").value("coordinator@example.com"))
-                        .andExpect(jsonPath("$[0].importedFields[12].fieldName")
-                                .value("Team Member 2 - Registration Number/Roll Number"))
-                        .andExpect(jsonPath("$[0].importedFields[12].fieldValue").value("22BCE0002"))
-                        .andExpect(jsonPath("$[0].importedFields[17].fieldName")
+                        .andExpect(jsonPath("$[0].importedFields[1].fieldName").value("Username"))
+                        .andExpect(jsonPath("$[0].importedFields[1].fieldValue").value("coordinator@example.com"))
+                        .andExpect(jsonPath("$[0].importedFields[5].fieldName")
+                                .value("Team Member 2 Registration Number/Roll Number"))
+                        .andExpect(jsonPath("$[0].importedFields[5].fieldValue").value("22BCE0002"))
+                        .andExpect(jsonPath("$[0].importedFields[10].fieldName")
                                 .value("Primary Contact Number (preferably Whatsapp Number)"));
 
         Long teamId = teams.findAll().get(0).getId();
@@ -407,10 +405,10 @@ class HackathonApplicationTests {
                 .andExpect(jsonPath("$.length()").value(250))
                 .andExpect(jsonPath("$[0].students.length()").value(4))
                 .andExpect(jsonPath("$[0].importedFields.length()").value(21))
-                .andExpect(jsonPath("$[0].importedFields[0].fieldName").value("Username"))
-                .andExpect(jsonPath("$[0].importedFields[4].fieldName").value("Programme"))
-                .andExpect(jsonPath("$[0].importedFields[7].fieldName")
-                        .value("Payment Reference Number (Check your Payment Receipt- Refer  Reference No column)"))
+                .andExpect(jsonPath("$[0].importedFields[1].fieldName").value("Username"))
+                .andExpect(jsonPath("$[0].importedFields[12].fieldName").value("Programme"))
+                .andExpect(jsonPath("$[0].importedFields[15].fieldName")
+                        .value("Payment Reference Number (Check your Payment Receipt- Refer Reference No column)"))
                 .andExpect(jsonPath("$[0].importedFields[20].fieldName").value("Their Gmail ID"));
 
         org.junit.jupiter.api.Assertions.assertEquals(250, teams.count());
@@ -431,13 +429,18 @@ class HackathonApplicationTests {
         Team lastTeam = teams.findAll().stream()
                 .max(Comparator.comparing(Team::getTeamNumber))
                 .orElseThrow();
-        org.junit.jupiter.api.Assertions.assertEquals(
-                "Team Member 2 \u00e2\u20ac\u201c Name   (As per SSLC Record- USE UPPERCASE FORMAT only) ",
-                firstTeam.getImportedFields().get(11).getFieldName());
-        org.junit.jupiter.api.Assertions.assertEquals(fixtureHeaders,
-                firstTeam.getImportedFields().stream().map(field -> field.getFieldName()).toList());
-        org.junit.jupiter.api.Assertions.assertEquals(firstTeamValues,
-                firstTeam.getImportedFields().stream().map(field -> field.getFieldValue()).toList());
+        org.junit.jupiter.api.Assertions.assertEquals(fixtureValuesFor(fixtureHeaders, firstTeamValues,
+                "Name of the Group Leader (As per SSLC Record- USE UPPERCASE FORMAT only)"),
+                firstTeam.getGroupLeaderName());
+        org.junit.jupiter.api.Assertions.assertEquals(fixtureValuesFor(fixtureHeaders, firstTeamValues,
+                "Register Number/Roll Number of the Group Leader"), firstTeam.getGroupLeaderRegisterNumber());
+        org.junit.jupiter.api.Assertions.assertEquals(fixtureValuesFor(fixtureHeaders, firstTeamValues,
+                "Payment Reference Number (Check your Payment Receipt- Refer  Reference No column)"),
+                firstTeam.getPaymentReferenceNumber());
+        org.junit.jupiter.api.Assertions.assertEquals("leader001@example.test",
+                firstTeam.getImportedFields().get(19).getFieldValue());
+        org.junit.jupiter.api.Assertions.assertEquals("leader001@gmail.test",
+                firstTeam.getImportedFields().get(20).getFieldValue());
         org.junit.jupiter.api.Assertions.assertEquals("MEMBER 3 TEAM 250",
                 lastTeam.getStudents().stream().filter(member -> member.getRegisterNumber().equals("26MCA1998"))
                         .findFirst().orElseThrow().getName());
@@ -639,6 +642,18 @@ class HackathonApplicationTests {
         }
         fields.add(field.toString());
         return fields;
+    }
+
+    private String fixtureValuesFor(List<String> headers, List<String> values, String expectedHeader) {
+        int index = -1;
+        for (int i = 0; i < headers.size(); i++) {
+            if (headers.get(i).trim().equals(expectedHeader)) {
+                index = i;
+                break;
+            }
+        }
+        org.junit.jupiter.api.Assertions.assertNotEquals(-1, index, "Expected fixture header was missing");
+        return values.get(index);
     }
 
     private MockMultipartFile teamWorkbook() throws Exception {

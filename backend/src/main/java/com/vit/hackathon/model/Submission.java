@@ -9,6 +9,8 @@ public class Submission {
     @Id @GeneratedValue(strategy = GenerationType.IDENTITY)
     private Long id;
     @OneToOne(fetch = FetchType.EAGER, optional = false)
+    @JoinColumn(name = "team_id", nullable = false, unique = true,
+            foreignKey = @ForeignKey(name = "fk_submissions_team"))
     private Team team;
     private String googleDriveLink;
     private String githubLink;

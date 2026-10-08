@@ -4,7 +4,7 @@ import com.fasterxml.jackson.annotation.JsonIgnore;
 import jakarta.persistence.*;
 
 @Entity
-@Table(name = "students")
+@Table(name = "students", indexes = @Index(name = "idx_students_team_id", columnList = "team_id"))
 public class Student {
     @Id @GeneratedValue(strategy = GenerationType.IDENTITY)
     private Long id;
@@ -16,6 +16,7 @@ public class Student {
     @Column(nullable = false)
     private boolean leader = false;
     @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "team_id", foreignKey = @ForeignKey(name = "fk_students_team"))
     @JsonIgnore
     private Team team;
 
