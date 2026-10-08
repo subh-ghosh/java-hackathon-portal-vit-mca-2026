@@ -37,7 +37,7 @@ async function request(path, options = {}) {
 }
 
 function Login({ onLogin }) {
-  const [form, setForm] = useState({ name: '', registerNumber: '' });
+  const [form, setForm] = useState({ username: '', registerNumber: '' });
   const [error, setError] = useState('');
   const [submitting, setSubmitting] = useState(false);
   async function submit(event) {
@@ -51,7 +51,7 @@ function Login({ onLogin }) {
     finally { setSubmitting(false); }
   }
   return <main className="login-shell"><section className="hero"><img className="login-logo" src="/vit-logo-transparent.png" alt="Vellore Institute of Technology" /><span className="eyebrow">VIT - JAVA HACKATHON 2026</span><h1>Build something<br /><em>that matters.</em></h1><p>Your team space for the assigned problem statement and team details.</p><div className="stat-row"><strong>500+ <small>participants</small></strong><strong>100 <small>teams</small></strong><strong>24h <small>to build</small></strong></div></section>
-    <form className="card login-card" onSubmit={submit}><span className="eyebrow">PARTICIPANT PORTAL</span><h2>Welcome back.</h2><p className="muted">Use your name and VIT register number to sign in.</p><label>Name<input required value={form.name} onChange={e => setForm({ ...form, name: e.target.value })} placeholder="Name as provided to the coordinator" /></label><label>Register number<input required type="password" value={form.registerNumber} onChange={e => setForm({ ...form, registerNumber: e.target.value })} placeholder="Your register number" /></label>{error && <div className="error" role="alert">{error}</div>}<button disabled={submitting}>{submitting ? 'Signing in…' : 'Enter team space'} <span>→</span></button></form></main>;
+    <form className="card login-card" onSubmit={submit}><span className="eyebrow">PARTICIPANT PORTAL</span><h2>Welcome back.</h2><p className="muted">Use your team username and your register number to sign in.</p><label>Team username<input required value={form.username} onChange={e => setForm({ ...form, username: e.target.value })} placeholder="Username from your team registration" /></label><label>Register number<input required type="password" value={form.registerNumber} onChange={e => setForm({ ...form, registerNumber: e.target.value })} placeholder="Your register number" /></label>{error && <div className="error" role="alert">{error}</div>}<button disabled={submitting}>{submitting ? 'Signing in…' : 'Enter team space'} <span>→</span></button></form></main>;
 }
 
 function Student({ team, credentials, logout }) {

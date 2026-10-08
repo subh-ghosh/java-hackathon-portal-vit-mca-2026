@@ -106,7 +106,7 @@ public class HackathonController {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Participant login details are required");
         }
         enforceLoginWindow();
-        Student student = authenticateParticipant(request.name(), request.registerNumber());
+        Student student = authenticateParticipant(request.username(), request.registerNumber());
         if (student.getTeam() == null || student.getTeam().getId() == null) {
             throw new ResponseStatusException(HttpStatus.CONFLICT,
                     "Participant is not assigned to a team. Contact the coordinator.");
@@ -227,7 +227,7 @@ public class HackathonController {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Submission links are required");
         }
         enforceLoginWindow();
-        Student student = authenticateParticipant(request.name(), request.registerNumber());
+        Student student = authenticateParticipant(request.username(), request.registerNumber());
         if (!student.isLeader()) throw new ResponseStatusException(HttpStatus.FORBIDDEN, "Only the group leader can submit");
         requireWebUrl(request.googleDriveLink(), "Google Drive");
         requireWebUrl(request.githubLink(), "GitHub");
@@ -448,6 +448,7 @@ public class HackathonController {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST,
                     "Group leader name must be their actual name, not their register number");
         }
+        String teamUsername = normalizeTeamUsername(importedFieldValue(fields, 1));
         List<ImportedParticipant> participants = new ArrayList<>();
         participants.add(new ImportedParticipant(leaderRegister, leaderName));
         for (int member = 2; member <= 4; member++) {
@@ -465,6 +466,10 @@ public class HackathonController {
                 participants.add(new ImportedParticipant(memberRegister, memberName));
             }
         }
+        if (teamUsername.isBlank()) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST,
+                    "Team username is required because participants use it to sign in");
+        }
         Set<String> participantNumbers = new HashSet<>();
         for (ImportedParticipant participant : participants) {
             String registerNumber = normalizeRegisterNumber(participant.registerNumber());
@@ -472,7 +477,7 @@ public class HackathonController {
                 throw new ResponseStatusException(HttpStatus.BAD_REQUEST,
                         "Register number " + registerNumber + " appears more than once in this team");
             }
-            ensureRegisterNumberAvailable(registerNumber, null);
+            ensureLoginIdentityAvailable(teamUsername, registerNumber, null);
         }
         normalizeRegistrationFieldValues(fields);
         team.setImportedFields(fields);
@@ -528,7 +533,7 @@ public class HackathonController {
                 }
             }
             List<Team> imported = new ArrayList<>();
-            Map<String, Integer> importedRegisterRows = new HashMap<>();
+            Map<LoginIdentity, Integer> importedLoginRows = new HashMap<>();
             for (int recordIndex = 1; recordIndex < records.size(); recordIndex++) {
                 List<String> values = records.get(recordIndex);
                 int rowNumber = recordIndex + 1;
@@ -542,6 +547,12 @@ public class HackathonController {
                 for (int column = 0; column < expectedHeaders.size(); column++) {
                     importedFields.add(new ImportedTeamField(column, expectedHeaders.get(column),
                             valueAt(values, column)));
+                }
+                String teamUsername = normalizeTeamUsername(importedFieldValue(importedFields, 1));
+                if (teamUsername.isBlank()) {
+                    throw new ResponseStatusException(HttpStatus.BAD_REQUEST,
+                            "Missing team username on CSV row " + rowNumber
+                                    + ". Participants use this value to sign in.");
                 }
                 if (importedFields.stream().anyMatch(this::isInvalidImportedField)) {
                     throw new ResponseStatusException(HttpStatus.BAD_REQUEST,
@@ -578,14 +589,15 @@ public class HackathonController {
                 }
                 for (ImportedParticipant participant : participants) {
                     String register = normalizeRegisterNumber(participant.registerNumber());
-                    Integer previousRow = importedRegisterRows.putIfAbsent(register, rowNumber);
+                    LoginIdentity identity = new LoginIdentity(teamUsername, register);
+                    Integer previousRow = importedLoginRows.putIfAbsent(identity, rowNumber);
                     if (previousRow != null) {
                         throw new ResponseStatusException(HttpStatus.CONFLICT,
-                                "Register number " + register + " appears more than once in the upload "
+                                "The team username and register number combination appears more than once in the upload "
                                         + "(CSV rows " + previousRow + " and " + rowNumber + "). "
-                                        + "Each participant can belong to only one team.");
+                                        + "Each participant login combination must identify one person.");
                     }
-                    ensureRegisterNumberAvailable(register, null, rowNumber);
+                    ensureLoginIdentityAvailable(teamUsername, register, null, rowNumber);
                 }
                 Team team = new Team();
                 team.setTeamNumber(nextTeamNumber());
@@ -678,13 +690,18 @@ public class HackathonController {
         Team team = teams.findById(teamId)
                 .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Team not found"));
         normalizeRegistrationFieldValues(request.fields());
-        validateRegistrationParticipants(request.fields());
+        validateRegistrationParticipants(request.fields(), team);
         syncRegistrationParticipants(team, request.fields());
         team.setImportedFields(request.fields());
         return teams.save(team);
     }
 
-    private void validateRegistrationParticipants(List<ImportedTeamField> fields) {
+    private void validateRegistrationParticipants(List<ImportedTeamField> fields, Team team) {
+        String username = normalizeTeamUsername(importedFieldValue(fields, 1));
+        if (username.isBlank()) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST,
+                    "Team username is required because participants use it to sign in");
+        }
         String leaderName = importedFieldValue(fields, 2).trim();
         String leaderRegister = normalizeRegisterNumber(importedFieldValue(fields, 3));
         if (leaderName.isBlank() || leaderRegister.isBlank() || leaderName.equalsIgnoreCase(leaderRegister)) {
@@ -710,6 +727,13 @@ public class HackathonController {
             if (!registerNumbers.add(register)) {
                 throw new ResponseStatusException(HttpStatus.CONFLICT,
                         "Register number " + register + " appears more than once in this team");
+            }
+            boolean assignedElsewhere = students.findByLoginUsernameAndRegisterNumber(username, register).stream()
+                    .anyMatch(existing -> existing.getTeam() == null
+                            || !Objects.equals(existing.getTeam().getId(), team.getId()));
+            if (assignedElsewhere) {
+                throw new ResponseStatusException(HttpStatus.CONFLICT,
+                        "The team username and register number combination is already assigned to another team");
             }
         }
     }
@@ -762,7 +786,6 @@ public class HackathonController {
                 }
                 continue;
             }
-            ensureRegisterNumberAvailable(register, student == null ? null : student.getId());
             if (student == null) {
                 student = new Student();
                 student.setTeam(team);
@@ -853,6 +876,7 @@ public class HackathonController {
     }
 
     @PostMapping("/admin/teams/{teamId}/students")
+    @Transactional
     public Team addStudent(@RequestHeader("X-Admin-Password") String password,
                            @PathVariable Long teamId, @RequestBody StudentRequest request) {
         requireAdmin(password);
@@ -860,7 +884,11 @@ public class HackathonController {
                 .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Team not found"));
         Student student = new Student();
         applyStudent(student, request);
-        ensureRegisterNumberAvailable(student.getRegisterNumber(), null);
+        if (team.getRegistrationUsername() == null || team.getRegistrationUsername().isBlank()) {
+            throw new ResponseStatusException(HttpStatus.CONFLICT,
+                    "Set the team username before adding participants so they can sign in");
+        }
+        ensureLoginIdentityAvailable(team.getRegistrationUsername(), student.getRegisterNumber(), null);
         List<ImportedTeamField> fields = team.getImportedFields();
         int availableNameIndex = -1;
         for (int nameIndex : new int[]{4, 6, 8}) {
@@ -891,7 +919,10 @@ public class HackathonController {
         String previousRegister = normalizeRegisterNumber(student.getRegisterNumber());
         Student candidate = new Student();
         applyStudent(candidate, request);
-        ensureRegisterNumberAvailable(candidate.getRegisterNumber(), student.getId());
+        if (student.getTeam() != null) {
+            ensureLoginIdentityAvailable(student.getTeam().getRegistrationUsername(),
+                    candidate.getRegisterNumber(), student.getId());
+        }
         student.setName(candidate.getName());
         student.setRegisterNumber(candidate.getRegisterNumber());
         student.setEmail(candidate.getEmail());
@@ -1023,21 +1054,20 @@ public class HackathonController {
         }
     }
 
-    private Student authenticateParticipant(String name, String registerNumber) {
-        if (name == null || name.isBlank() || registerNumber == null || registerNumber.isBlank()) {
-            throw new ResponseStatusException(HttpStatus.UNAUTHORIZED, "Invalid name or register number");
+    private Student authenticateParticipant(String username, String registerNumber) {
+        String normalizedUsername = normalizeTeamUsername(username);
+        String normalizedRegister = normalizeRegisterNumber(registerNumber);
+        if (normalizedUsername.isBlank() || normalizedRegister.isBlank()) {
+            throw new ResponseStatusException(HttpStatus.UNAUTHORIZED,
+                    "Invalid team username or register number");
         }
-        return students.findByRegisterNumberIgnoreCase(registerNumber.trim())
-                .filter(student -> hasParticipantName(student)
-                        && student.getName().trim().equalsIgnoreCase(name.trim()))
-                .orElseThrow(() -> new ResponseStatusException(HttpStatus.UNAUTHORIZED,
-                        "Invalid name or register number"));
-    }
-
-    private boolean hasParticipantName(Student student) {
-        return student.getName() != null
-                && !student.getName().isBlank()
-                && !student.getName().trim().equalsIgnoreCase(student.getRegisterNumber());
+        List<Student> matches = students.findByLoginUsernameAndRegisterNumber(
+                normalizedUsername, normalizedRegister);
+        if (matches.size() != 1) {
+            throw new ResponseStatusException(HttpStatus.UNAUTHORIZED,
+                    "Invalid team username or register number");
+        }
+        return matches.get(0);
     }
 
     private void applyStudent(Student student, StudentRequest request) {
@@ -1066,27 +1096,34 @@ public class HackathonController {
         student.setEmail(request.email() == null || request.email().isBlank() ? null : request.email().trim());
     }
 
-    private void ensureRegisterNumberAvailable(String registerNumber, Long exceptStudentId) {
-        ensureRegisterNumberAvailable(registerNumber, exceptStudentId, null);
+    private void ensureLoginIdentityAvailable(String username, String registerNumber, Long exceptStudentId) {
+        ensureLoginIdentityAvailable(username, registerNumber, exceptStudentId, null);
     }
 
-    private void ensureRegisterNumberAvailable(String registerNumber, Long exceptStudentId, Integer csvRow) {
-        String normalized = normalizeRegisterNumber(registerNumber);
-        students.findByRegisterNumberIgnoreCase(normalized)
+    private void ensureLoginIdentityAvailable(String username, String registerNumber, Long exceptStudentId,
+                                              Integer csvRow) {
+        String normalizedUsername = normalizeTeamUsername(username);
+        String normalizedRegister = normalizeRegisterNumber(registerNumber);
+        students.findByLoginUsernameAndRegisterNumber(normalizedUsername, normalizedRegister).stream()
                 .filter(existing -> !Objects.equals(existing.getId(), exceptStudentId))
+                .findFirst()
                 .ifPresent(existing -> {
                     String rowMessage = csvRow == null ? "" : " on CSV row " + csvRow;
                     throw new ResponseStatusException(HttpStatus.CONFLICT,
-                            "Register number " + normalized + " is already assigned to another team"
-                                    + rowMessage + ". A participant can belong to only one team.");
+                            "The team username and register number combination is already assigned"
+                                    + rowMessage + ". Use the matching team username or correct the duplicate.");
                 });
+    }
+
+    private String normalizeTeamUsername(String value) {
+        return value == null ? "" : value.trim().toUpperCase(Locale.ROOT);
     }
 
     private String normalizeRegisterNumber(String value) {
         return value == null ? "" : value.trim().toUpperCase(Locale.ROOT);
     }
 
-    public record LoginRequest(String name, String registerNumber) {}
+    public record LoginRequest(String username, String registerNumber) {}
     public record StudentTeamResponse(String name, Integer teamNumber, String ownRegisterNumber,
                                       String ownName, String ownEmail, String leaderRegisterNumber, Problem problem,
                                       List<Student> students, boolean leader, Submission submission) {}
@@ -1095,9 +1132,10 @@ public class HackathonController {
     public record ImportedFieldsRequest(List<ImportedTeamField> fields) {}
     public record StudentRequest(String name, String registerNumber, String email) {}
     public record SettingsRequest(boolean loginEnabled, String startTime, String endTime) {}
-    public record SubmissionRequest(String name, String registerNumber, String googleDriveLink, String githubLink) {}
+    public record SubmissionRequest(String username, String registerNumber, String googleDriveLink, String githubLink) {}
     public record EnabledRequest(boolean enabled) {}
     private record ImportedParticipant(String registerNumber, String name) {}
+    private record LoginIdentity(String username, String registerNumber) {}
 
     private void saveSetting(String key, String value) {
         settings.save(new AppSetting(key, value));

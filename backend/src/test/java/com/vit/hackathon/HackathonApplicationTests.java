@@ -112,6 +112,7 @@ class HackathonApplicationTests {
         }
 
         fields.get(2).setFieldValue("TEAM LEADER");
+        fields.get(1).setFieldValue("manual-team@example.test");
         fields.get(3).setFieldValue("26MCA9001");
         fields.get(4).setFieldValue("TEAM MEMBER");
         fields.get(5).setFieldValue("26MCA9002");
@@ -138,7 +139,7 @@ class HackathonApplicationTests {
     }
 
     @Test
-    void duplicateNamesAndUsernamesAreAllowedButParticipantRegistersAreUnique() throws Exception {
+    void duplicateNamesAndUsernamesAreAllowedAndLoginUsesUsernameAndRegisterPair() throws Exception {
         jdbcTemplate.execute("ALTER TABLE teams ADD CONSTRAINT legacy_teams_name_unique UNIQUE (name)");
         legacyTeamFieldsCleanup.run(new DefaultApplicationArguments(new String[0]));
         org.junit.jupiter.api.Assertions.assertEquals("NO",
@@ -164,28 +165,48 @@ class HackathonApplicationTests {
                         .filter(team -> "shared-username@example.test".equals(team.getRegistrationUsername()))
                         .count());
         org.junit.jupiter.api.Assertions.assertEquals("26MCA9101",
-                students.findByRegisterNumberIgnoreCase("26mca9101").orElseThrow().getRegisterNumber());
+                students.findAllByRegisterNumberIgnoreCase("26mca9101").get(0).getRegisterNumber());
+
+        createTeam("SAME PERSON", "26MCA9101", "different-username@example.test");
+        Team third = teams.findAll().stream()
+                .filter(team -> "different-username@example.test".equals(team.getRegistrationUsername()))
+                .findFirst().orElseThrow();
+        mockMvc.perform(post("/api/student/login")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"username\":\"SHARED-USERNAME@example.test\",\"registerNumber\":\"26mca9101\"}"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.name").value(first.getName()));
+        mockMvc.perform(post("/api/student/login")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"username\":\"different-username@example.test\",\"registerNumber\":\"26mca9101\"}"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.name").value(third.getName()));
 
         mockMvc.perform(post("/api/admin/teams")
                         .header("X-Admin-Password", ADMIN_PASSWORD)
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(new ObjectMapper().writeValueAsString(Map.of("importedFields",
-                                teamFields("ANOTHER SAME NAME", " 26MCA9101 ", "another-user@example.test")))))
+                                teamFields("ANOTHER SAME NAME", " 26MCA9101 ", "shared-username@example.test")))))
                 .andExpect(status().isConflict())
                 .andExpect(jsonPath("$.message").value(
-                        org.hamcrest.Matchers.containsString("already assigned to another team")));
-        org.junit.jupiter.api.Assertions.assertEquals(2, teams.count());
-        org.junit.jupiter.api.Assertions.assertEquals(2, students.count());
+                        org.hamcrest.Matchers.containsString("combination is already assigned")));
+        org.junit.jupiter.api.Assertions.assertEquals(3, teams.count());
+        org.junit.jupiter.api.Assertions.assertEquals(3, students.count());
 
         mockMvc.perform(multipart("/api/admin/teams/import")
                         .file(csvUpload(TeamRegistrationFields.LABELS,
-                                teamRow("THIRD SAME PERSON", "26mca9102", "shared-user@example.test")))
+                                teamRow("DUPLICATE LOGIN", "26mca9101", "shared-username@example.test")))
                         .header("X-Admin-Password", ADMIN_PASSWORD))
                 .andExpect(status().isConflict())
                 .andExpect(jsonPath("$.message").value(
-                        org.hamcrest.Matchers.containsString("already assigned to another team")));
-        org.junit.jupiter.api.Assertions.assertEquals(2, teams.count());
-        org.junit.jupiter.api.Assertions.assertEquals(2, students.count());
+                        org.hamcrest.Matchers.containsString("combination is already assigned")));
+        mockMvc.perform(multipart("/api/admin/teams/import")
+                        .file(csvUpload(TeamRegistrationFields.LABELS,
+                                teamRow("SAME REGISTER", "26mca9101", "third-username@example.test")))
+                        .header("X-Admin-Password", ADMIN_PASSWORD))
+                .andExpect(status().isOk());
+        org.junit.jupiter.api.Assertions.assertEquals(4, teams.count());
+        org.junit.jupiter.api.Assertions.assertEquals(4, students.count());
 
         mockMvc.perform(post("/api/admin/teams/{teamId}/students", second.getId())
                         .header("X-Admin-Password", ADMIN_PASSWORD)
@@ -193,14 +214,14 @@ class HackathonApplicationTests {
                         .content("{\"name\":\"ANOTHER SAME NAME\",\"registerNumber\":\"26mca9101\"}"))
                 .andExpect(status().isConflict())
                 .andExpect(jsonPath("$.message").value(
-                        org.hamcrest.Matchers.containsString("already assigned to another team")));
+                        org.hamcrest.Matchers.containsString("combination is already assigned")));
         Student secondStudent = second.getStudents().get(0);
         mockMvc.perform(put("/api/admin/students/{studentId}", secondStudent.getId())
                         .header("X-Admin-Password", ADMIN_PASSWORD)
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("{\"name\":\"ANOTHER SAME NAME\",\"registerNumber\":\"26mca9101\"}"))
                 .andExpect(status().isConflict());
-        org.junit.jupiter.api.Assertions.assertEquals(2, students.count());
+        org.junit.jupiter.api.Assertions.assertEquals(4, students.count());
     }
 
     @Test
@@ -251,12 +272,12 @@ class HackathonApplicationTests {
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.students.length()").value(2))
                 .andExpect(jsonPath("$.groupLeaderRegisterNumber").value("26MCA9261"));
-        org.junit.jupiter.api.Assertions.assertTrue(students.findByRegisterNumberIgnoreCase("26MCA9251").isEmpty());
-        org.junit.jupiter.api.Assertions.assertTrue(students.findByRegisterNumberIgnoreCase("26MCA9252").isEmpty());
+        org.junit.jupiter.api.Assertions.assertTrue(students.findAllByRegisterNumberIgnoreCase("26MCA9251").isEmpty());
+        org.junit.jupiter.api.Assertions.assertTrue(students.findAllByRegisterNumberIgnoreCase("26MCA9252").isEmpty());
         org.junit.jupiter.api.Assertions.assertEquals("UPDATED LEADER",
-                students.findByRegisterNumberIgnoreCase("26MCA9261").orElseThrow().getName());
+                students.findAllByRegisterNumberIgnoreCase("26MCA9261").get(0).getName());
         org.junit.jupiter.api.Assertions.assertEquals("UPDATED MEMBER",
-                students.findByRegisterNumberIgnoreCase("26MCA9262").orElseThrow().getName());
+                students.findAllByRegisterNumberIgnoreCase("26MCA9262").get(0).getName());
         org.junit.jupiter.api.Assertions.assertEquals("26MCA9261",
                 teams.findById(team.getId()).orElseThrow().getGroupLeaderRegisterNumber());
     }
@@ -272,8 +293,8 @@ class HackathonApplicationTests {
                         .content(new ObjectMapper().writeValueAsString(Map.of("importedFields", fields))))
                 .andExpect(status().isOk());
         Team team = teams.findAll().get(0);
-        Student oldLeader = students.findByRegisterNumberIgnoreCase("26MCA9271").orElseThrow();
-        Student replacement = students.findByRegisterNumberIgnoreCase("26MCA9272").orElseThrow();
+        Student oldLeader = students.findAllByRegisterNumberIgnoreCase("26MCA9271").get(0);
+        Student replacement = students.findAllByRegisterNumberIgnoreCase("26MCA9272").get(0);
 
         mockMvc.perform(delete("/api/admin/students/{studentId}", oldLeader.getId())
                         .header("X-Admin-Password", ADMIN_PASSWORD))
@@ -374,11 +395,12 @@ class HackathonApplicationTests {
         Student orphan = new Student();
         orphan.setName("ORPHAN PARTICIPANT");
         orphan.setRegisterNumber("26MCA9283");
+        orphan.setLoginUsername("orphan-team");
         students.saveAndFlush(orphan);
 
         mockMvc.perform(post("/api/student/login")
                         .contentType(MediaType.APPLICATION_JSON)
-                        .content("{\"name\":\"ORPHAN PARTICIPANT\",\"registerNumber\":\"26MCA9283\"}"))
+                        .content("{\"username\":\"orphan-team\",\"registerNumber\":\"26MCA9283\"}"))
                 .andExpect(status().isConflict())
                 .andExpect(jsonPath("$.message").value(
                         org.hamcrest.Matchers.containsString("not assigned to a team")));
@@ -499,6 +521,7 @@ class HackathonApplicationTests {
     @Test
     void invalidTeamImportReturnsSpecificErrorAndDoesNotSaveAnyRows() throws Exception {
         List<String> validRow = new ArrayList<>(java.util.Collections.nCopies(19, ""));
+        validRow.set(1, "test-user@example.test");
         validRow.set(2, "TEST LEADER");
         validRow.set(3, "26MCA9001");
         List<String> extraCellRow = new ArrayList<>(validRow);
@@ -524,7 +547,7 @@ class HackathonApplicationTests {
     }
 
     @Test
-    void teamImportAllowsRepeatedNamesAndUsernamesButRejectsDuplicateRegistersAtomically() throws Exception {
+    void teamImportAllowsDuplicateRegistersForDifferentUsernamesButRejectsDuplicateLoginPairsAtomically() throws Exception {
         List<String> firstRow = teamRow("SAME PERSON", "26MCA9301", "shared-user@example.test");
         List<String> secondRow = teamRow("SAME PERSON", "26mca9301", "shared-user@example.test");
 
@@ -533,9 +556,9 @@ class HackathonApplicationTests {
                         .header("X-Admin-Password", ADMIN_PASSWORD))
                 .andExpect(status().isConflict())
                 .andExpect(jsonPath("$.message").value(org.hamcrest.Matchers.allOf(
-                        org.hamcrest.Matchers.containsString("26MCA9301"),
+                        org.hamcrest.Matchers.containsString("combination appears more than once"),
                         org.hamcrest.Matchers.containsString("CSV rows 2 and 3"),
-                        org.hamcrest.Matchers.containsString("only one team"))));
+                        org.hamcrest.Matchers.containsString("one person"))));
         org.junit.jupiter.api.Assertions.assertEquals(0, teams.count());
         org.junit.jupiter.api.Assertions.assertEquals(0, students.count());
 
@@ -547,6 +570,16 @@ class HackathonApplicationTests {
                 .andExpect(jsonPath("$.length()").value(2));
         org.junit.jupiter.api.Assertions.assertEquals(2, teams.count());
         org.junit.jupiter.api.Assertions.assertEquals(2, students.count());
+
+        List<String> sameRegisterDifferentUsername =
+                teamRow("SAME REGISTER NUMBER", "26MCA9301", "different-user@example.test");
+        mockMvc.perform(multipart("/api/admin/teams/import")
+                        .file(csvUpload(TeamRegistrationFields.LABELS, sameRegisterDifferentUsername))
+                        .header("X-Admin-Password", ADMIN_PASSWORD))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$[0].students[0].registerNumber").value("26MCA9301"));
+        org.junit.jupiter.api.Assertions.assertEquals(3, teams.count());
+        org.junit.jupiter.api.Assertions.assertEquals(3, students.count());
     }
 
     @Test
@@ -620,7 +653,7 @@ class HackathonApplicationTests {
                                 .value("Primary Contact Number (preferably Whatsapp Number)"));
 
         Long teamId = teams.findAll().get(0).getId();
-        Long leaderId = students.findByRegisterNumberIgnoreCase("22BCE0001").orElseThrow().getId();
+        Long leaderId = students.findAllByRegisterNumberIgnoreCase("22BCE0001").get(0).getId();
         List<ImportedTeamField> editedFields = new ArrayList<>(teams.findById(teamId).orElseThrow().getImportedFields());
         editedFields.stream()
                 .filter(field -> "Username".equals(field.getFieldName()))
@@ -670,8 +703,8 @@ class HackathonApplicationTests {
         students.saveAndFlush(leader);
         mockMvc.perform(post("/api/student/login")
                         .contentType(MediaType.APPLICATION_JSON)
-                        .content("{\"name\":\"22BCE0001\",\"registerNumber\":\"22BCE0001\"}"))
-                .andExpect(status().isUnauthorized());
+                        .content("{\"username\":\"updated@example.test\",\"registerNumber\":\"22BCE0001\"}"))
+                .andExpect(status().isOk());
         leader.setName("TEST LEADER");
         students.saveAndFlush(leader);
 
@@ -697,7 +730,7 @@ class HackathonApplicationTests {
 
         mockMvc.perform(post("/api/student/login")
                         .contentType(MediaType.APPLICATION_JSON)
-                        .content("{\"name\":\"TEST LEADER\",\"registerNumber\":\"22BCE0001\"}"))
+                        .content("{\"username\":\"updated@example.test\",\"registerNumber\":\"22BCE0001\"}"))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.leader").value(true))
                 .andExpect(jsonPath("$.ownRegisterNumber").value("22BCE0001"))
@@ -705,12 +738,12 @@ class HackathonApplicationTests {
 
         mockMvc.perform(post("/api/student/login")
                         .contentType(MediaType.APPLICATION_JSON)
-                        .content("{\"name\":\"WRONG NAME\",\"registerNumber\":\"22BCE0001\"}"))
+                        .content("{\"username\":\"wrong-team\",\"registerNumber\":\"22BCE0001\"}"))
                 .andExpect(status().isUnauthorized());
 
         mockMvc.perform(put("/api/student/submission")
                         .contentType(MediaType.APPLICATION_JSON)
-                        .content("{\"name\":\"TEST LEADER\",\"registerNumber\":\"22BCE0001\","
+                        .content("{\"username\":\"updated@example.test\",\"registerNumber\":\"22BCE0001\","
                                 + "\"googleDriveLink\":\"https://drive.google.com/file/d/test\","
                                 + "\"githubLink\":\"https://github.com/example/project\"}"))
                 .andExpect(status().isOk())
@@ -760,7 +793,7 @@ class HackathonApplicationTests {
 
         mockMvc.perform(put("/api/student/submission")
                         .contentType(MediaType.APPLICATION_JSON)
-                        .content("{\"name\":\"TEST MEMBER 2\",\"registerNumber\":\"22BCE0002\","
+                        .content("{\"username\":\"updated@example.test\",\"registerNumber\":\"22BCE0002\","
                                 + "\"googleDriveLink\":\"https://drive.google.com/file/d/test\","
                                 + "\"githubLink\":\"https://github.com/example/project\"}"))
                 .andExpect(status().isForbidden());
@@ -774,7 +807,7 @@ class HackathonApplicationTests {
 
         mockMvc.perform(post("/api/student/login")
                         .contentType(MediaType.APPLICATION_JSON)
-                        .content("{\"name\":\"TEST LEADER\",\"registerNumber\":\"22BCE0001\"}"))
+                        .content("{\"username\":\"updated@example.test\",\"registerNumber\":\"22BCE0001\"}"))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.problem.id").value(problem.getId()));
 
@@ -787,7 +820,7 @@ class HackathonApplicationTests {
                 .andExpect(status().isOk());
         mockMvc.perform(post("/api/student/login")
                         .contentType(MediaType.APPLICATION_JSON)
-                        .content("{\"name\":\"TEST LEADER\",\"registerNumber\":\"22BCE0001\"}"))
+                        .content("{\"username\":\"updated@example.test\",\"registerNumber\":\"22BCE0001\"}"))
                 .andExpect(status().isForbidden());
 
         mockMvc.perform(put("/api/admin/settings")
@@ -798,7 +831,7 @@ class HackathonApplicationTests {
                 .andExpect(status().isOk());
         mockMvc.perform(post("/api/student/login")
                         .contentType(MediaType.APPLICATION_JSON)
-                        .content("{\"name\":\"TEST LEADER\",\"registerNumber\":\"22BCE0001\"}"))
+                        .content("{\"username\":\"updated@example.test\",\"registerNumber\":\"22BCE0001\"}"))
                 .andExpect(status().isOk());
 
         mockMvc.perform(put("/api/admin/settings")
@@ -809,7 +842,7 @@ class HackathonApplicationTests {
                 .andExpect(status().isOk());
         mockMvc.perform(post("/api/student/login")
                         .contentType(MediaType.APPLICATION_JSON)
-                        .content("{\"name\":\"TEST LEADER\",\"registerNumber\":\"22BCE0001\"}"))
+                        .content("{\"username\":\"updated@example.test\",\"registerNumber\":\"22BCE0001\"}"))
                 .andExpect(status().isForbidden());
 
         mockMvc.perform(put("/api/admin/settings")
@@ -821,7 +854,7 @@ class HackathonApplicationTests {
 
         mockMvc.perform(post("/api/student/login")
                         .contentType(MediaType.APPLICATION_JSON)
-                        .content("{\"name\":\"Participant\",\"registerNumber\":\"22BCE0001\"}"))
+                        .content("{\"username\":\"updated@example.test\",\"registerNumber\":\"22BCE0001\"}"))
                 .andExpect(status().isForbidden());
     }
 
@@ -916,7 +949,8 @@ class HackathonApplicationTests {
 
         mockMvc.perform(post("/api/student/login")
                         .contentType(MediaType.APPLICATION_JSON)
-                        .content("{\"name\":\"MEMBER 3 TEAM 250\",\"registerNumber\":\"26MCA1998\"}"))
+                        .content(new ObjectMapper().writeValueAsString(Map.of(
+                                "username", lastTeam.getRegistrationUsername(), "registerNumber", "26MCA1998"))))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.teamNumber").value(250))
                 .andExpect(jsonPath("$.students.length()").value(4))
@@ -924,21 +958,24 @@ class HackathonApplicationTests {
                 .andExpect(jsonPath("$.leader").value(false));
         mockMvc.perform(put("/api/student/submission")
                         .contentType(MediaType.APPLICATION_JSON)
-                        .content("{\"name\":\"MEMBER 3 TEAM 250\",\"registerNumber\":\"26MCA1998\","
-                                + "\"googleDriveLink\":\"https://drive.google.com/file/d/test\","
-                                + "\"githubLink\":\"https://github.com/example/project\"}"))
+                        .content(new ObjectMapper().writeValueAsString(Map.of(
+                                "username", lastTeam.getRegistrationUsername(), "registerNumber", "26MCA1998",
+                                "googleDriveLink", "https://drive.google.com/file/d/test",
+                                "githubLink", "https://github.com/example/project"))))
                 .andExpect(status().isForbidden());
 
         mockMvc.perform(post("/api/student/login")
                         .contentType(MediaType.APPLICATION_JSON)
-                        .content("{\"name\":\"LEADER 250\",\"registerNumber\":\"26MCA1996\"}"))
+                        .content(new ObjectMapper().writeValueAsString(Map.of(
+                                "username", lastTeam.getRegistrationUsername(), "registerNumber", "26MCA1996"))))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.leader").value(true));
         mockMvc.perform(put("/api/student/submission")
                         .contentType(MediaType.APPLICATION_JSON)
-                        .content("{\"name\":\"LEADER 250\",\"registerNumber\":\"26MCA1996\","
-                                + "\"googleDriveLink\":\"https://drive.google.com/file/d/team250\","
-                                + "\"githubLink\":\"https://github.com/example/team250\"}"))
+                        .content(new ObjectMapper().writeValueAsString(Map.of(
+                                "username", lastTeam.getRegistrationUsername(), "registerNumber", "26MCA1996",
+                                "googleDriveLink", "https://drive.google.com/file/d/team250",
+                                "githubLink", "https://github.com/example/team250"))))
                 .andExpect(status().isOk());
         mockMvc.perform(get("/api/admin/submissions").header("X-Admin-Password", ADMIN_PASSWORD))
                 .andExpect(status().isOk())
@@ -962,7 +999,8 @@ class HackathonApplicationTests {
                 .andExpect(status().isOk());
         mockMvc.perform(post("/api/student/login")
                         .contentType(MediaType.APPLICATION_JSON)
-                        .content("{\"name\":\"LEADER 250\",\"registerNumber\":\"26MCA1996\"}"))
+                        .content(new ObjectMapper().writeValueAsString(Map.of(
+                                "username", lastTeam.getRegistrationUsername(), "registerNumber", "26MCA1996"))))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.problem").value(nullValue()));
 
@@ -994,8 +1032,8 @@ class HackathonApplicationTests {
                                 + "\"email\":\"crud@example.test\"}"))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.students.length()").value(2));
-        Student crudOriginalLeader = students.findByRegisterNumberIgnoreCase("26MCA9998").orElseThrow();
-        Student crudParticipant = students.findByRegisterNumberIgnoreCase("26MCA9999").orElseThrow();
+        Student crudOriginalLeader = students.findAllByRegisterNumberIgnoreCase("26MCA9998").get(0);
+        Student crudParticipant = students.findAllByRegisterNumberIgnoreCase("26MCA9999").get(0);
         mockMvc.perform(put("/api/admin/students/{studentId}", crudParticipant.getId())
                         .header("X-Admin-Password", ADMIN_PASSWORD)
                         .contentType(MediaType.APPLICATION_JSON)
@@ -1009,7 +1047,7 @@ class HackathonApplicationTests {
                 .andExpect(status().isOk());
         mockMvc.perform(post("/api/student/login")
                         .contentType(MediaType.APPLICATION_JSON)
-                        .content("{\"name\":\"UPDATED PARTICIPANT\",\"registerNumber\":\"26MCA9999\"}"))
+                        .content("{\"username\":\"crud-team@example.test\",\"registerNumber\":\"26MCA9999\"}"))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.leader").value(true));
         mockMvc.perform(delete("/api/admin/students/{studentId}", crudParticipant.getId())

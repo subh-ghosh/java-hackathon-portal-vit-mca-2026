@@ -6,7 +6,7 @@ Full-stack hackathon management portal built with Spring Boot, React, and Postgr
 
 - Admin dashboard for team management and problem statements
 - Assign one problem statement to multiple teams
-- Student login with the participant name and VIT register number
+- Student login with the team registration username and participant register number
 - Shared problem statement for every member of a team
 - Read-only student view of team members and assigned problem
 - Admin-only team, student, problem, and assignment management
@@ -16,9 +16,9 @@ Full-stack hackathon management portal built with Spring Boot, React, and Postgr
 
 Team CSV and Excel imports must use exactly the 19 team registration headers in the required order. The admin import dialog displays the complete ordered list and provides a CSV template download. Imports with missing, additional, renamed, or reordered headers—or rows containing extra cells—are rejected. The registration fields are stored as typed columns on `teams`; participant login records remain in `students`.
 
-Team registration usernames and group leader names may repeat because they are not participant identity keys. Participant register numbers are trimmed and normalized to uppercase and must be unique across the upload, across teams, and within a team. If any import row is invalid, the entire upload is rolled back and no teams or students from that upload are saved. Question imports are also validated as a whole before rows are saved.
+Team registration usernames and group leader names may repeat. Participant login uses the combination of the team registration `Username` and the participant register number; both values are trimmed and normalized case-insensitively. A register number may therefore appear for participants using different team usernames, but a duplicate username/register-number combination is rejected. Repeated combinations within an import reject the entire upload; no teams or students from that upload are saved. Question imports are also validated as a whole before rows are saved.
 
-Editing imported registration details updates the linked student roster. A team leader must be reassigned before that participant can be deleted. Admin passwords are held in browser memory only and are not persisted in web storage. Participant login currently uses name and register number; it does not yet use a separate access password.
+Editing imported registration details updates the linked student roster and login username. Participants sign in with the team registration `Username` and their register number; they do not enter an institution name. A team leader must be reassigned before that participant can be deleted. Admin passwords are held in browser memory only and are not persisted in web storage. Participant login does not yet use a separate access password.
 
 ## Local setup
 

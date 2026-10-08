@@ -6,12 +6,18 @@ import jakarta.persistence.*;
 import java.util.Locale;
 
 @Entity
-@Table(name = "students", indexes = @Index(name = "idx_students_team_id", columnList = "team_id"))
+@Table(name = "students",
+        uniqueConstraints = @UniqueConstraint(name = "uk_students_login_identity",
+                columnNames = {"login_username", "register_number"}),
+        indexes = @Index(name = "idx_students_team_id", columnList = "team_id"))
 public class Student {
     @Id @GeneratedValue(strategy = GenerationType.IDENTITY)
     private Long id;
-    @Column(nullable = false, unique = true)
+    @Column(nullable = false, length = 80)
     private String registerNumber;
+    @Column(name = "login_username", length = 320)
+    @JsonIgnore
+    private String loginUsername;
     @Column(nullable = false)
     private String name;
     @Column(length = 320)
@@ -28,6 +34,10 @@ public class Student {
     public void setRegisterNumber(String value) {
         registerNumber = value == null ? null : value.trim().toUpperCase(Locale.ROOT);
     }
+    public String getLoginUsername() { return loginUsername; }
+    public void setLoginUsername(String value) {
+        loginUsername = value == null ? null : value.trim().toUpperCase(Locale.ROOT);
+    }
     public String getName() { return name; }
     public void setName(String value) { name = value; }
     public String getEmail() { return email; }
@@ -35,5 +45,8 @@ public class Student {
     public boolean isLeader() { return leader; }
     public void setLeader(boolean value) { leader = value; }
     public Team getTeam() { return team; }
-    public void setTeam(Team value) { team = value; }
+    public void setTeam(Team value) {
+        team = value;
+        setLoginUsername(value == null ? null : value.getRegistrationUsername());
+    }
 }

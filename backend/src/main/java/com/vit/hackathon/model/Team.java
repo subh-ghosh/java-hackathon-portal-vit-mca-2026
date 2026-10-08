@@ -163,6 +163,9 @@ public class Team {
                 }
             }
         }
+        for (Student student : students) {
+            student.setLoginUsername(registrationUsername);
+        }
     }
 
     private static String value(String value) {
