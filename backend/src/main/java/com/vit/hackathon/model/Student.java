@@ -3,6 +3,8 @@ package com.vit.hackathon.model;
 import com.fasterxml.jackson.annotation.JsonIgnore;
 import jakarta.persistence.*;
 
+import java.util.Locale;
+
 @Entity
 @Table(name = "students", indexes = @Index(name = "idx_students_team_id", columnList = "team_id"))
 public class Student {
@@ -22,7 +24,9 @@ public class Student {
 
     public Long getId() { return id; }
     public String getRegisterNumber() { return registerNumber; }
-    public void setRegisterNumber(String value) { registerNumber = value; }
+    public void setRegisterNumber(String value) {
+        registerNumber = value == null ? null : value.trim().toUpperCase(Locale.ROOT);
+    }
     public String getName() { return name; }
     public void setName(String value) { name = value; }
     public String getEmail() { return email; }

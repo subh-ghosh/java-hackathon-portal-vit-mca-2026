@@ -36,10 +36,12 @@ import java.util.Arrays;
 import java.util.Collections;
 import java.util.Comparator;
 import java.util.HashMap;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Locale;
 import java.util.Objects;
+import java.util.Set;
 import java.time.OffsetDateTime;
 import java.time.ZoneOffset;
 import java.time.ZoneId;
@@ -88,10 +90,14 @@ public class HackathonController {
         return Map.of("teamCount", teams.count(), "studentCount", students.count());
     }
 
-    @ExceptionHandler(TeamImportException.class)
-    public ResponseEntity<Map<String, String>> handleTeamImportException(TeamImportException exception) {
+    @ExceptionHandler(ResponseStatusException.class)
+    public ResponseEntity<Map<String, String>> handleRequestException(ResponseStatusException exception) {
+        String message = exception.getReason();
+        if (message == null || message.isBlank()) {
+            message = exception.getStatusCode().toString();
+        }
         return ResponseEntity.status(exception.getStatusCode())
-                .body(Map.of("message", exception.getReason()));
+                .body(Map.of("message", message));
     }
 
     @PostMapping("/student/login")
@@ -368,63 +374,66 @@ public class HackathonController {
     @PostMapping("/admin/teams")
     public Team createTeam(@RequestHeader("X-Admin-Password") String password, @RequestBody TeamRequest request) {
         requireAdmin(password);
+        if (request == null || request.importedFields() == null) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST,
+                    "Enter all 19 registration fields to create a team");
+        }
         Team team = new Team();
-        if (request.importedFields() == null) {
-            if (request.name() == null || request.name().isBlank()) {
-                throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Team name is required");
-            }
-            team.setName(request.name().trim());
-        } else {
-            List<ImportedTeamField> fields = request.importedFields();
-            if (fields.size() != 19 || fields.stream().anyMatch(field -> field == null
-                    || field.getColumnIndex() < 0 || field.getColumnIndex() >= 19
-                    || !TeamRegistrationFields.LABELS.get(field.getColumnIndex()).equals(field.getFieldName())
-                    || isInvalidImportedField(field))
-                    || fields.stream().map(ImportedTeamField::getColumnIndex).distinct().count() != 19) {
+        List<ImportedTeamField> fields = request.importedFields();
+        if (fields.size() != TeamRegistrationFields.LABELS.size() || fields.stream().anyMatch(field -> field == null
+                || field.getColumnIndex() < 0 || field.getColumnIndex() >= TeamRegistrationFields.LABELS.size()
+                || !TeamRegistrationFields.LABELS.get(field.getColumnIndex()).equals(field.getFieldName())
+                || isInvalidImportedField(field))
+                || fields.stream().map(ImportedTeamField::getColumnIndex).distinct().count() != fields.size()) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST,
+                    "All 19 team form fields must be provided with unique indexes");
+        }
+        String leaderName = importedFieldValue(fields, 2).trim();
+        String leaderRegister = normalizeRegisterNumber(importedFieldValue(fields, 3));
+        if (leaderName.isBlank() || leaderRegister.isBlank()) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST,
+                    "Group leader name and register number are required");
+        }
+        if (leaderName.equalsIgnoreCase(leaderRegister)) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST,
+                    "Group leader name must be their actual name, not their register number");
+        }
+        List<ImportedParticipant> participants = new ArrayList<>();
+        participants.add(new ImportedParticipant(leaderRegister, leaderName));
+        for (int member = 2; member <= 4; member++) {
+            String memberName = importedFieldValue(fields, 4 + (member - 2) * 2).trim();
+            String memberRegister = normalizeRegisterNumber(importedFieldValue(fields, 5 + (member - 2) * 2));
+            if (memberName.isBlank() != memberRegister.isBlank()) {
                 throw new ResponseStatusException(HttpStatus.BAD_REQUEST,
-                        "All 19 team form fields must be provided with unique indexes");
+                        "For team member " + member + ", enter both the name and register number or leave both blank");
             }
-            String leaderName = importedFieldValue(fields, 2).trim();
-            String leaderRegister = importedFieldValue(fields, 3).trim();
-            if (leaderName.isBlank() || leaderRegister.isBlank()) {
-                throw new ResponseStatusException(HttpStatus.BAD_REQUEST,
-                        "Group leader name and register number are required");
-            }
-            List<ImportedParticipant> participants = new ArrayList<>();
-            participants.add(new ImportedParticipant(leaderRegister, leaderName));
-            for (int member = 2; member <= 4; member++) {
-                String memberName = importedFieldValue(fields, 4 + (member - 2) * 2).trim();
-                String memberRegister = importedFieldValue(fields, 5 + (member - 2) * 2).trim();
-                if (memberName.isBlank() != memberRegister.isBlank()) {
+            if (!memberRegister.isBlank()) {
+                if (memberName.equalsIgnoreCase(memberRegister)) {
                     throw new ResponseStatusException(HttpStatus.BAD_REQUEST,
-                            "Both name and register number are required for team member " + member);
+                            "Team member " + member + " name must be their actual name, not their register number");
                 }
-                if (!memberRegister.isBlank()) {
-                    participants.add(new ImportedParticipant(memberRegister, memberName));
-                }
+                participants.add(new ImportedParticipant(memberRegister, memberName));
             }
-            if (participants.stream().map(ImportedParticipant::registerNumber).distinct().count()
-                    != participants.size()) {
+        }
+        Set<String> participantNumbers = new HashSet<>();
+        for (ImportedParticipant participant : participants) {
+            String registerNumber = normalizeRegisterNumber(participant.registerNumber());
+            if (!participantNumbers.add(registerNumber)) {
                 throw new ResponseStatusException(HttpStatus.BAD_REQUEST,
-                        "Each participant must have a unique register number");
+                        "Register number " + registerNumber + " appears more than once in this team");
             }
-            for (ImportedParticipant participant : participants) {
-                if (students.findByRegisterNumberIgnoreCase(participant.registerNumber()).isPresent()) {
-                    throw new ResponseStatusException(HttpStatus.CONFLICT,
-                            "Register number is already assigned: " + participant.registerNumber());
-                }
-            }
-            team.setImportedFields(fields);
-            for (int i = 0; i < participants.size(); i++) {
-                ImportedParticipant participant = participants.get(i);
-                Student student = new Student();
-                student.setName(participant.name());
-                student.setRegisterNumber(participant.registerNumber());
-                student.setEmail(i == 0 ? importedFieldValue(fields, 11).trim() : null);
-                student.setLeader(i == 0);
-                student.setTeam(team);
-                team.getStudents().add(student);
-            }
+            ensureRegisterNumberAvailable(registerNumber, null);
+        }
+        team.setImportedFields(fields);
+        for (int i = 0; i < participants.size(); i++) {
+            ImportedParticipant participant = participants.get(i);
+            Student student = new Student();
+            student.setName(participant.name());
+            student.setRegisterNumber(participant.registerNumber());
+            student.setEmail(i == 0 ? importedFieldValue(fields, 11).trim() : null);
+            student.setLeader(i == 0);
+            student.setTeam(team);
+            team.getStudents().add(student);
         }
         team.setTeamNumber(nextTeamNumber());
         if (team.getName() == null) team.setName(String.format("Team %03d", team.getTeamNumber()));
@@ -446,28 +455,29 @@ public class HackathonController {
                                   @RequestPart("file") MultipartFile file) {
         requireAdmin(password);
         if (file.isEmpty()) {
-            throw new TeamImportException("Team import file is empty");
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Team import file is empty");
         }
         try (BufferedReader reader = new BufferedReader(createTeamImportReader(file))) {
             String headerLine = reader.readLine();
             if (headerLine == null) {
-                throw new TeamImportException("Team import file has no header row");
+                throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Team import file has no header row");
             }
             List<String> headers = parseCsvLine(headerLine);
             List<String> expectedHeaders = TeamRegistrationFields.LABELS;
             if (headers.size() != expectedHeaders.size()) {
-                throw new TeamImportException(
+                throw new ResponseStatusException(HttpStatus.BAD_REQUEST,
                         "Team import must contain exactly these 19 columns, in this exact order: "
                                 + String.join(" | ", expectedHeaders));
             }
             for (int i = 0; i < expectedHeaders.size(); i++) {
                 if (!expectedHeaders.get(i).equals(headers.get(i))) {
-                    throw new TeamImportException(
+                    throw new ResponseStatusException(HttpStatus.BAD_REQUEST,
                             "Team import column " + (i + 1) + " must be exactly: " + expectedHeaders.get(i)
                                     + ". Use the supplied column names and order; do not add, remove, or rename columns.");
                 }
             }
             List<Team> imported = new ArrayList<>();
+            Map<String, Integer> importedRegisterRows = new HashMap<>();
             String line;
             int rowNumber = 1;
             while ((line = reader.readLine()) != null) {
@@ -475,7 +485,7 @@ public class HackathonController {
                 if (line.isBlank()) continue;
                 List<String> values = parseCsvLine(line);
                 if (values.size() > expectedHeaders.size()) {
-                    throw new TeamImportException(
+                    throw new ResponseStatusException(HttpStatus.BAD_REQUEST,
                             "Team import row " + rowNumber + " contains extra columns; exactly 19 are allowed");
                 }
                 List<ImportedTeamField> importedFields = new ArrayList<>(expectedHeaders.size());
@@ -484,34 +494,48 @@ public class HackathonController {
                             valueAt(values, column)));
                 }
                 if (importedFields.stream().anyMatch(this::isInvalidImportedField)) {
-                    throw new TeamImportException(
+                    throw new ResponseStatusException(HttpStatus.BAD_REQUEST,
                             "A team field exceeds its allowed length on CSV row " + rowNumber);
                 }
-                String leaderRegister = importedFieldValue(importedFields, 3);
+                String leaderRegister = normalizeRegisterNumber(importedFieldValue(importedFields, 3));
                 if (isIgnoredRegister(leaderRegister)) {
-                    throw new TeamImportException(
+                    throw new ResponseStatusException(HttpStatus.BAD_REQUEST,
                             "Missing representative register number on CSV row " + rowNumber);
                 }
                 String leaderName = importedFieldValue(importedFields, 2);
                 if (leaderName.isBlank() || leaderName.trim().equalsIgnoreCase(leaderRegister)) {
-                    throw new TeamImportException(
+                    throw new ResponseStatusException(HttpStatus.BAD_REQUEST,
                             "Missing or invalid group leader name on CSV row " + rowNumber);
                 }
                 List<ImportedParticipant> participants = new ArrayList<>();
                 participants.add(new ImportedParticipant(leaderRegister, leaderName));
                 for (int memberNumber = 2; memberNumber <= 4; memberNumber++) {
                     int memberFieldIndex = 4 + (memberNumber - 2) * 2;
-                    String register = importedFieldValue(importedFields, memberFieldIndex + 1);
-                    if (isIgnoredRegister(register)) continue;
-                    if (participants.stream().anyMatch(participant ->
-                            participant.registerNumber().equalsIgnoreCase(register))) continue;
-                    String name = importedFieldValue(importedFields, memberFieldIndex);
+                    String register = normalizeRegisterNumber(importedFieldValue(importedFields, memberFieldIndex + 1));
+                    String name = importedFieldValue(importedFields, memberFieldIndex).trim();
+                    if (register.isBlank() && name.isBlank()) continue;
+                    if (register.isBlank() != name.isBlank()) {
+                        throw new ResponseStatusException(HttpStatus.BAD_REQUEST,
+                                "For team member " + memberNumber + " on CSV row " + rowNumber
+                                        + ", enter both the name and register number or leave both blank");
+                    }
                     if (name.isBlank() || name.trim().equalsIgnoreCase(register)) {
-                        throw new TeamImportException(
+                        throw new ResponseStatusException(HttpStatus.BAD_REQUEST,
                                 "Missing or invalid name for member register number " + register
                                         + " on CSV row " + rowNumber);
                     }
                     participants.add(new ImportedParticipant(register, name));
+                }
+                for (ImportedParticipant participant : participants) {
+                    String register = normalizeRegisterNumber(participant.registerNumber());
+                    Integer previousRow = importedRegisterRows.putIfAbsent(register, rowNumber);
+                    if (previousRow != null) {
+                        throw new ResponseStatusException(HttpStatus.CONFLICT,
+                                "Register number " + register + " appears more than once in the upload "
+                                        + "(CSV rows " + previousRow + " and " + rowNumber + "). "
+                                        + "Each participant can belong to only one team.");
+                    }
+                    ensureRegisterNumberAvailable(register, null, rowNumber);
                 }
                 Team team = new Team();
                 team.setTeamNumber(nextTeamNumber());
@@ -529,12 +553,13 @@ public class HackathonController {
                 imported.add(teams.save(team));
             }
             if (imported.isEmpty()) {
-                throw new TeamImportException(
+                throw new ResponseStatusException(HttpStatus.BAD_REQUEST,
                         "The spreadsheet contains headers but no team rows to import");
             }
             return imported;
         } catch (IOException exception) {
-            throw new TeamImportException("Could not read team import file", exception);
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST,
+                    "Could not read team import file. Upload a valid CSV or Excel workbook.", exception);
         }
     }
 
@@ -545,7 +570,7 @@ public class HackathonController {
         }
         try (InputStream input = file.getInputStream(); Workbook workbook = WorkbookFactory.create(input)) {
             if (workbook.getNumberOfSheets() == 0) {
-                throw new TeamImportException("The Excel workbook has no worksheets");
+                throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "The Excel workbook has no worksheets");
             }
             Sheet sheet = workbook.getSheetAt(0);
             DataFormatter formatter = new DataFormatter(Locale.ROOT);
@@ -573,8 +598,13 @@ public class HackathonController {
     public Team updateTeam(@RequestHeader("X-Admin-Password") String password,
                            @PathVariable Long teamId, @RequestBody TeamRequest request) {
         requireAdmin(password);
+        if (request == null || request.name() == null || request.name().isBlank()
+                || request.name().trim().length() > 120) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST,
+                    "Team name is required and must be 120 characters or fewer");
+        }
         Team team = teams.findById(teamId).orElseThrow();
-        team.setName(request.name());
+        team.setName(request.name().trim());
         return teams.save(team);
     }
 
@@ -641,6 +671,7 @@ public class HackathonController {
         Team team = teams.findById(teamId).orElseThrow();
         Student student = new Student();
         applyStudent(student, request);
+        ensureRegisterNumberAvailable(student.getRegisterNumber(), null);
         student.setTeam(team);
         team.getStudents().add(student);
         return teams.save(team);
@@ -652,6 +683,7 @@ public class HackathonController {
         requireAdmin(password);
         Student student = students.findById(studentId).orElseThrow();
         applyStudent(student, request);
+        ensureRegisterNumberAvailable(student.getRegisterNumber(), student.getId());
         return students.save(student);
     }
 
@@ -721,6 +753,9 @@ public class HackathonController {
     }
 
     private void applyStudent(Student student, StudentRequest request) {
+        if (request == null) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Participant details are required");
+        }
         if (request.name() == null || request.name().isBlank()) {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Participant name is required for sign-in");
         }
@@ -736,6 +771,26 @@ public class HackathonController {
         student.setName(name);
         student.setRegisterNumber(registerNumber);
         student.setEmail(request.email() == null || request.email().isBlank() ? null : request.email().trim());
+    }
+
+    private void ensureRegisterNumberAvailable(String registerNumber, Long exceptStudentId) {
+        ensureRegisterNumberAvailable(registerNumber, exceptStudentId, null);
+    }
+
+    private void ensureRegisterNumberAvailable(String registerNumber, Long exceptStudentId, Integer csvRow) {
+        String normalized = normalizeRegisterNumber(registerNumber);
+        students.findByRegisterNumberIgnoreCase(normalized)
+                .filter(existing -> !Objects.equals(existing.getId(), exceptStudentId))
+                .ifPresent(existing -> {
+                    String rowMessage = csvRow == null ? "" : " on CSV row " + csvRow;
+                    throw new ResponseStatusException(HttpStatus.CONFLICT,
+                            "Register number " + normalized + " is already assigned to another team"
+                                    + rowMessage + ". A participant can belong to only one team.");
+                });
+    }
+
+    private String normalizeRegisterNumber(String value) {
+        return value == null ? "" : value.trim().toUpperCase(Locale.ROOT);
     }
 
     public record LoginRequest(String name, String registerNumber) {}
@@ -827,16 +882,6 @@ public class HackathonController {
                 .filter(Objects::nonNull)
                 .max(Integer::compareTo)
                 .orElse(0) + 1;
-    }
-
-    private static final class TeamImportException extends ResponseStatusException {
-        private TeamImportException(String reason) {
-            super(HttpStatus.BAD_REQUEST, reason);
-        }
-
-        private TeamImportException(String reason, Throwable cause) {
-            super(HttpStatus.BAD_REQUEST, reason, cause);
-        }
     }
 
     private static Integer findColumn(Map<String, Integer> columns, String expected) {

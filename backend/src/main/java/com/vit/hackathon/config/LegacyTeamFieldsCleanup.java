@@ -24,6 +24,7 @@ public class LegacyTeamFieldsCleanup implements ApplicationRunner {
     @Override
     @Transactional
     public void run(ApplicationArguments args) {
+        dropSingleColumnUniqueConstraints("teams", "name");
         if (tableExists("team_imported_fields")) {
             jdbcTemplate.execute("DROP TABLE team_imported_fields");
             logger.info("Removed obsolete team_imported_fields table");
@@ -35,6 +36,29 @@ public class LegacyTeamFieldsCleanup implements ApplicationRunner {
         if (columnExists("teams", "imported_extras")) {
             jdbcTemplate.execute("ALTER TABLE teams DROP COLUMN imported_extras");
             logger.info("Removed unused teams.imported_extras column");
+        }
+    }
+
+    private void dropSingleColumnUniqueConstraints(String tableName, String columnName) {
+        var constraintNames = jdbcTemplate.query("""
+                SELECT tc.CONSTRAINT_NAME
+                FROM INFORMATION_SCHEMA.TABLE_CONSTRAINTS tc
+                JOIN INFORMATION_SCHEMA.KEY_COLUMN_USAGE kcu
+                  ON tc.CONSTRAINT_CATALOG = kcu.CONSTRAINT_CATALOG
+                 AND tc.CONSTRAINT_SCHEMA = kcu.CONSTRAINT_SCHEMA
+                 AND tc.CONSTRAINT_NAME = kcu.CONSTRAINT_NAME
+                 AND tc.TABLE_NAME = kcu.TABLE_NAME
+                WHERE LOWER(tc.TABLE_SCHEMA) = LOWER(CURRENT_SCHEMA())
+                  AND LOWER(tc.TABLE_NAME) = LOWER(?)
+                  AND tc.CONSTRAINT_TYPE = 'UNIQUE'
+                GROUP BY tc.CONSTRAINT_NAME
+                HAVING COUNT(*) = 1 AND MAX(LOWER(kcu.COLUMN_NAME)) = LOWER(?)
+                """, (result, row) -> result.getString(1), tableName, columnName);
+        for (String constraintName : constraintNames) {
+            jdbcTemplate.execute("ALTER TABLE " + tableName + " DROP CONSTRAINT \""
+                    + constraintName.replace("\"", "\"\"") + "\"");
+            logger.info("Removed unique constraint {} from {}.{} to allow duplicate team names",
+                    constraintName, tableName, columnName);
         }
     }
 

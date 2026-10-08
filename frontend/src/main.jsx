@@ -301,6 +301,16 @@ function Admin() {
   async function createTeam(e) {
     e.preventDefault();
     setTeamCreateError('');
+    if (!newTeamFields[2].fieldValue.trim() || !newTeamFields[3].fieldValue.trim()) {
+      setTeamCreateError('Enter the group leader’s name and register number.');
+      return;
+    }
+    const participantRegisters = [3, 5, 7, 9]
+      .map(index => newTeamFields[index].fieldValue.trim().toUpperCase());
+    if (new Set(participantRegisters).size !== participantRegisters.length) {
+      setTeamCreateError('Each participant must have a unique register number. Check the leader and member register numbers.');
+      return;
+    }
     for (let memberIndex = 4; memberIndex <= 8; memberIndex += 2) {
       const name = newTeamFields[memberIndex].fieldValue.trim();
       const registerNumber = newTeamFields[memberIndex + 1].fieldValue.trim();
@@ -317,7 +327,11 @@ function Admin() {
         body: JSON.stringify({ importedFields: newTeamFields })
       });
     } catch (error) {
-      setTeamCreateError(error.message);
+      const message = /already assigned/i.test(error.message)
+        ? `${error.message} Edit the existing team instead of registering this participant again.`
+        : error.message;
+      setTeamCreateError(message);
+      setErrorNotice(message);
       return;
     }
     setTeams([...teams, created]);
@@ -340,7 +354,10 @@ function Admin() {
       form.reset();
       setNotice(`${imported.length} teams imported.`);
     } catch (error) {
-      setErrorNotice(`Team import failed: ${error.message}`);
+      const message = /already assigned|appears more than once/i.test(error.message)
+        ? `Team import failed: ${error.message} No teams were imported. Remove the repeated participant or edit their existing team.`
+        : `Team import failed: ${error.message} No teams were imported.`;
+      setErrorNotice(message);
     }
   }
   function downloadTeamImportTemplate() {

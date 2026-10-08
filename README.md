@@ -16,6 +16,8 @@ Full-stack hackathon management portal built with Spring Boot, React, and Postgr
 
 Team CSV and Excel imports must use exactly the 19 team registration headers in the required order. The admin import dialog displays the complete ordered list and provides a CSV template download. Imports with missing, additional, renamed, or reordered headers—or rows containing extra cells—are rejected. The registration fields are stored as typed columns on `teams`; participant login records remain in `students`.
 
+Team registration usernames and group leader names may repeat because they are not participant identity keys. Participant register numbers are trimmed and normalized to uppercase and must be unique across the upload, across teams, and within a team. If any import row is invalid, the entire upload is rolled back and no teams or students from that upload are saved.
+
 ## Local setup
 
 ### Backend

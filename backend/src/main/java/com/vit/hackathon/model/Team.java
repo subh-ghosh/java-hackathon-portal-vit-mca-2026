@@ -12,7 +12,7 @@ public class Team {
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     private Long id;
 
-    @Column(nullable = false, unique = true, length = 120)
+    @Column(nullable = false, length = 120)
     private String name;
 
     @Column(name = "team_number", unique = true)
@@ -31,10 +31,10 @@ public class Team {
     @Column(name = "registration_username", length = 320)
     private String registrationUsername;
 
-    @Column(name = "group_leader_name", length = 255)
+    @Column(name = "group_leader_name", nullable = false, length = 255)
     private String groupLeaderName;
 
-    @Column(name = "group_leader_register_number", length = 80)
+    @Column(name = "group_leader_register_number", nullable = false, length = 80)
     private String groupLeaderRegisterNumber;
 
     @Column(name = "member_2_name", length = 255)
