@@ -1,6 +1,5 @@
 package com.vit.hackathon.model;
 
-import com.fasterxml.jackson.annotation.JsonIgnore;
 import jakarta.persistence.*;
 
 import java.util.ArrayList;
@@ -83,11 +82,6 @@ public class Team {
     @Column(length = 120)
     private String state;
 
-    @JsonIgnore
-    @Convert(converter = ImportedTeamFieldsConverter.class)
-    @Column(name = "imported_extras", columnDefinition = "TEXT")
-    private List<ImportedTeamField> importedExtras = new ArrayList<>();
-
     public Long getId() { return id; }
     public String getName() { return name; }
     public void setName(String name) { this.name = name; }
@@ -115,8 +109,6 @@ public class Team {
     public String getInstituteName() { return instituteName; }
     public String getCity() { return city; }
     public String getState() { return state; }
-    public List<ImportedTeamField> getImportedExtras() { return importedExtras; }
-
     public List<ImportedTeamField> getImportedFields() {
         List<String> values = List.of(
                 value(registrationTimestamp), value(registrationUsername), value(groupLeaderName),
@@ -126,34 +118,26 @@ public class Team {
                 value(programme), value(specialization), value(institution),
                 value(paymentReferenceNumber), value(instituteName), value(city), value(state)
         );
-        List<ImportedTeamField> fields = new ArrayList<>(TeamRegistrationFields.LABELS.size()
-                + importedExtras.size());
+        List<ImportedTeamField> fields = new ArrayList<>(TeamRegistrationFields.LABELS.size());
         for (int index = 0; index < TeamRegistrationFields.LABELS.size(); index++) {
             fields.add(new ImportedTeamField(index, TeamRegistrationFields.LABELS.get(index), values.get(index)));
-        }
-        for (int index = 0; index < importedExtras.size(); index++) {
-            ImportedTeamField extra = importedExtras.get(index);
-            fields.add(new ImportedTeamField(TeamRegistrationFields.LABELS.size() + index,
-                    extra.getFieldName(), extra.getFieldValue()));
         }
         return fields;
     }
 
     public void setImportedFields(List<ImportedTeamField> fields) {
-        List<ImportedTeamField> extras = new ArrayList<>();
+        boolean[] seenFields = new boolean[TeamRegistrationFields.LABELS.size()];
         if (fields != null) {
             for (ImportedTeamField field : fields) {
-                if (field == null) continue;
+                if (field == null) throw new IllegalArgumentException("Team fields cannot contain null entries");
                 int index = TeamRegistrationFields.indexOf(field.getFieldName());
                 if (index < 0 && field.getColumnIndex() >= 0 && field.getColumnIndex() < TeamRegistrationFields.LABELS.size()
                         && TeamRegistrationFields.LABELS.get(field.getColumnIndex()).equals(field.getFieldName())) {
                     index = field.getColumnIndex();
                 }
-                if (index < 0) {
-                    extras.add(new ImportedTeamField(TeamRegistrationFields.LABELS.size() + extras.size(),
-                            field.getFieldName(), value(field.getFieldValue())));
-                    continue;
-                }
+                if (index < 0) continue;
+                if (seenFields[index]) throw new IllegalArgumentException("Duplicate team registration field");
+                seenFields[index] = true;
                 String fieldValue = value(field.getFieldValue());
                 switch (index) {
                     case 0 -> registrationTimestamp = fieldValue;
@@ -179,7 +163,6 @@ public class Team {
                 }
             }
         }
-        importedExtras = extras;
     }
 
     private static String value(String value) {

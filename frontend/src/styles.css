@@ -132,3 +132,8 @@ body:has(.login-shell) .mode-switch{top:20px;bottom:auto}
 .team-create-fields label{min-width:0;line-height:1.5}
 .team-create-fields input{min-width:0}
 @media(max-width:600px){.import-modal:has(.team-create-form){max-height:94vh}.team-create-fields{grid-template-columns:1fr}}
+.team-import-guidance{margin:16px 0;padding:16px;background:#f4f7f3;border:1px solid #e4ebe5;border-radius:10px}
+.team-import-guidance ol{display:grid;grid-template-columns:1fr 1fr;gap:7px 22px;padding-left:24px;margin:14px 0 0;max-height:220px;overflow:auto}
+.team-import-guidance li{padding-left:3px;color:#718077;font-size:.72rem;line-height:1.45;overflow-wrap:anywhere}
+.team-import-guidance code{font:inherit;color:#365542}
+@media(max-width:600px){.team-import-guidance ol{grid-template-columns:1fr;max-height:180px}}

@@ -32,6 +32,10 @@ public class LegacyTeamFieldsCleanup implements ApplicationRunner {
             jdbcTemplate.execute("ALTER TABLE teams DROP COLUMN imported_fields");
             logger.info("Removed obsolete teams.imported_fields column");
         }
+        if (columnExists("teams", "imported_extras")) {
+            jdbcTemplate.execute("ALTER TABLE teams DROP COLUMN imported_extras");
+            logger.info("Removed unused teams.imported_extras column");
+        }
     }
 
     private boolean tableExists(String tableName) {

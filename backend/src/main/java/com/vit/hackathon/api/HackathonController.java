@@ -36,12 +36,10 @@ import java.util.Arrays;
 import java.util.Collections;
 import java.util.Comparator;
 import java.util.HashMap;
-import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Locale;
 import java.util.Objects;
-import java.util.TreeMap;
 import java.time.OffsetDateTime;
 import java.time.ZoneOffset;
 import java.time.ZoneId;
@@ -449,24 +447,18 @@ public class HackathonController {
                 throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "CSV file has no header");
             }
             List<String> headers = parseCsvLine(headerLine);
-            Integer representativeColumn = findColumnContaining(headers, "group leader", "regist");
-            if (representativeColumn == null) {
+            List<String> expectedHeaders = TeamRegistrationFields.LABELS;
+            if (headers.size() != expectedHeaders.size()) {
                 throw new ResponseStatusException(HttpStatus.BAD_REQUEST,
-                        "CSV must contain the group leader register number column");
+                        "Team import must contain exactly these 19 columns, in this exact order: "
+                                + String.join(" | ", expectedHeaders));
             }
-            Map<Integer, List<Integer>> memberRegisterColumns = new TreeMap<>();
-            for (int i = 0; i < headers.size(); i++) {
-                String normalizedHeader = normalize(headers.get(i));
-                java.util.regex.Matcher memberNumber = java.util.regex.Pattern
-                        .compile("member\\s+(\\d+)").matcher(normalizedHeader);
-                if (normalizedHeader.contains("regist") && memberNumber.find()) {
-                    memberRegisterColumns.computeIfAbsent(Integer.parseInt(memberNumber.group(1)),
-                            ignored -> new ArrayList<>()).add(i);
+            for (int i = 0; i < expectedHeaders.size(); i++) {
+                if (!expectedHeaders.get(i).equals(headers.get(i))) {
+                    throw new ResponseStatusException(HttpStatus.BAD_REQUEST,
+                            "Team import column " + (i + 1) + " must be exactly: " + expectedHeaders.get(i)
+                                    + ". Use the supplied column names and order; do not add, remove, or rename columns.");
                 }
-            }
-            if (memberRegisterColumns.isEmpty()) {
-                throw new ResponseStatusException(HttpStatus.BAD_REQUEST,
-                        "CSV must contain at least one member register number column");
             }
             List<Team> imported = new ArrayList<>();
             String line;
@@ -475,32 +467,38 @@ public class HackathonController {
                 rowNumber++;
                 if (line.isBlank()) continue;
                 List<String> values = parseCsvLine(line);
-                List<ImportedTeamField> importedFields = uniqueImportedFields(headers, values);
+                if (values.size() > expectedHeaders.size()) {
+                    throw new ResponseStatusException(HttpStatus.BAD_REQUEST,
+                            "Team import row " + rowNumber + " contains extra columns; exactly 19 are allowed");
+                }
+                List<ImportedTeamField> importedFields = new ArrayList<>(expectedHeaders.size());
+                for (int column = 0; column < expectedHeaders.size(); column++) {
+                    importedFields.add(new ImportedTeamField(column, expectedHeaders.get(column),
+                            valueAt(values, column)));
+                }
                 if (importedFields.stream().anyMatch(this::isInvalidImportedField)) {
                     throw new ResponseStatusException(HttpStatus.BAD_REQUEST,
                             "A team field exceeds its allowed length on CSV row " + rowNumber);
                 }
-                String leaderRegister = valueAt(values, representativeColumn);
+                String leaderRegister = importedFieldValue(importedFields, 3);
                 if (isIgnoredRegister(leaderRegister)) {
                     throw new ResponseStatusException(HttpStatus.BAD_REQUEST,
                             "Missing representative register number on CSV row " + rowNumber);
                 }
-                Integer leaderNameColumn = findColumnContaining(headers, "group leader", "name");
-                String leaderName = leaderNameColumn == null ? "" : valueAt(values, leaderNameColumn);
+                String leaderName = importedFieldValue(importedFields, 2);
                 if (leaderName.isBlank() || leaderName.trim().equalsIgnoreCase(leaderRegister)) {
                     throw new ResponseStatusException(HttpStatus.BAD_REQUEST,
                             "Missing or invalid group leader name on CSV row " + rowNumber);
                 }
                 List<ImportedParticipant> participants = new ArrayList<>();
                 participants.add(new ImportedParticipant(leaderRegister, leaderName));
-                for (Map.Entry<Integer, List<Integer>> memberColumns : memberRegisterColumns.entrySet()) {
-                    String register = firstNonBlankValue(values, memberColumns.getValue());
+                for (int memberNumber = 2; memberNumber <= 4; memberNumber++) {
+                    int memberFieldIndex = 4 + (memberNumber - 2) * 2;
+                    String register = importedFieldValue(importedFields, memberFieldIndex + 1);
                     if (isIgnoredRegister(register)) continue;
                     if (participants.stream().anyMatch(participant ->
                             participant.registerNumber().equalsIgnoreCase(register))) continue;
-                    List<Integer> nameColumns = findColumnsContaining(headers,
-                            "member " + memberColumns.getKey(), "name");
-                    String name = firstNonBlankValue(values, nameColumns);
+                    String name = importedFieldValue(importedFields, memberFieldIndex);
                     if (name.isBlank() || name.trim().equalsIgnoreCase(register)) {
                         throw new ResponseStatusException(HttpStatus.BAD_REQUEST,
                                 "Missing or invalid name for member register number " + register
@@ -579,7 +577,10 @@ public class HackathonController {
                                          @PathVariable Long teamId, @RequestBody ImportedFieldsRequest request) {
         requireAdmin(password);
         if (request == null || request.fields() == null
+                || request.fields().size() != TeamRegistrationFields.LABELS.size()
                 || request.fields().stream().anyMatch(this::isInvalidImportedField)
+                || request.fields().stream().anyMatch(field -> field.getColumnIndex() >= TeamRegistrationFields.LABELS.size()
+                || !TeamRegistrationFields.LABELS.get(field.getColumnIndex()).equals(field.getFieldName()))
                 || request.fields().stream().map(ImportedTeamField::getColumnIndex).distinct().count()
                 != request.fields().size()) {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Invalid imported team fields");
@@ -845,62 +846,6 @@ public class HackathonController {
                 .map(Map.Entry::getValue)
                 .findFirst()
                 .orElse(null);
-    }
-
-    private static Integer findColumnContaining(List<String> headers, String... fragments) {
-        List<Integer> matches = findColumnsContaining(headers, fragments);
-        return matches.isEmpty() ? null : matches.get(0);
-    }
-
-    private static List<Integer> findColumnsContaining(List<String> headers, String... fragments) {
-        List<Integer> matches = new ArrayList<>();
-        for (int i = 0; i < headers.size(); i++) {
-            String normalizedHeader = normalize(headers.get(i));
-            if (Arrays.stream(fragments).allMatch(fragment -> normalizedHeader.contains(normalize(fragment)))) {
-                matches.add(i);
-            }
-        }
-        return matches;
-    }
-
-    private static String firstNonBlankValue(List<String> values, List<Integer> columns) {
-        return columns.stream()
-                .map(index -> valueAt(values, index))
-                .filter(value -> !value.isBlank())
-                .findFirst()
-                .orElse("");
-    }
-
-    private static List<ImportedTeamField> uniqueImportedFields(List<String> headers, List<String> values) {
-        Map<String, List<Integer>> columnsByField = new LinkedHashMap<>();
-        for (int i = 0; i < headers.size(); i++) {
-            columnsByField.computeIfAbsent(importedFieldKey(headers.get(i)), ignored -> new ArrayList<>()).add(i);
-        }
-        List<ImportedTeamField> fields = new ArrayList<>();
-        for (List<Integer> columns : columnsByField.values()) {
-            int firstColumn = columns.get(0);
-            fields.add(new ImportedTeamField(firstColumn, headers.get(firstColumn),
-                    firstNonBlankValue(values, columns)));
-        }
-        return fields;
-    }
-
-    private static String importedFieldKey(String header) {
-        String normalizedHeader = normalize(header);
-        java.util.regex.Matcher member = java.util.regex.Pattern
-                .compile("member\\s+(\\d+)").matcher(normalizedHeader);
-        if (member.find()) {
-            if (normalizedHeader.contains("name")) {
-                return "member " + member.group(1) + " name";
-            }
-            if (normalizedHeader.contains("regist") || normalizedHeader.contains("enrollment")) {
-                return "member " + member.group(1) + " register number";
-            }
-        }
-        if (normalizedHeader.contains("primary contact number")) {
-            return "primary contact number";
-        }
-        return normalizedHeader;
     }
 
     private static String valueAt(List<String> values, int index) {

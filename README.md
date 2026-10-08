@@ -12,6 +12,10 @@ Full-stack hackathon management portal built with Spring Boot, React, and Postgr
 - Admin-only team, student, problem, and assignment management
 - Admin submission review and Excel export, with double confirmation for bulk clears
 
+## Team import format
+
+Team CSV and Excel imports must use exactly the 19 team registration headers in the required order. The admin import dialog displays the complete ordered list and provides a CSV template download. Imports with missing, additional, renamed, or reordered headers—or rows containing extra cells—are rejected. The registration fields are stored as typed columns on `teams`; participant login records remain in `students`.
+
 ## Local setup
 
 ### Backend

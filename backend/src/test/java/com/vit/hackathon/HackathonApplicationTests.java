@@ -5,6 +5,7 @@ import com.vit.hackathon.model.ImportedTeamField;
 import com.vit.hackathon.model.Problem;
 import com.vit.hackathon.model.Student;
 import com.vit.hackathon.model.Team;
+import com.vit.hackathon.model.TeamRegistrationFields;
 import com.vit.hackathon.config.LegacyTeamFieldsCleanup;
 import com.vit.hackathon.repository.AppSettingRepository;
 import com.vit.hackathon.repository.ProblemRepository;
@@ -109,6 +110,7 @@ class HackathonApplicationTests {
         for (int index = 0; index < 19; index++) {
             fields.add(new ImportedTeamField(index, com.vit.hackathon.model.TeamRegistrationFields.LABELS.get(index), ""));
         }
+
         fields.get(2).setFieldValue("TEAM LEADER");
         fields.get(3).setFieldValue("26MCA9001");
         fields.get(4).setFieldValue("TEAM MEMBER");
@@ -136,8 +138,45 @@ class HackathonApplicationTests {
     }
 
     @Test
+    void teamImportRejectsAnyHeaderOrRowShapeThatDiffersFromTheCanonicalContract() throws Exception {
+        List<String> canonicalHeaders = TeamRegistrationFields.LABELS;
+        List<List<String>> invalidHeaders = new ArrayList<>();
+        List<String> extra = new ArrayList<>(canonicalHeaders);
+        extra.add("Extra column");
+        invalidHeaders.add(extra);
+        invalidHeaders.add(new ArrayList<>(canonicalHeaders.subList(0, canonicalHeaders.size() - 1)));
+        List<String> reordered = new ArrayList<>(canonicalHeaders);
+        java.util.Collections.swap(reordered, 0, 1);
+        invalidHeaders.add(reordered);
+        List<String> renamed = new ArrayList<>(canonicalHeaders);
+        renamed.set(0, "Submitted at");
+        invalidHeaders.add(renamed);
+
+        for (List<String> headers : invalidHeaders) {
+            MockMultipartFile file = csvUpload(headers, new ArrayList<>(java.util.Collections.nCopies(headers.size(), "")));
+            mockMvc.perform(multipart("/api/admin/teams/import")
+                            .file(file)
+                            .header("X-Admin-Password", ADMIN_PASSWORD))
+                    .andExpect(status().isBadRequest());
+        }
+        List<String> extraCell = new ArrayList<>(java.util.Collections.nCopies(canonicalHeaders.size() + 1, ""));
+        mockMvc.perform(multipart("/api/admin/teams/import")
+                        .file(csvUpload(canonicalHeaders, extraCell))
+                        .header("X-Admin-Password", ADMIN_PASSWORD))
+                .andExpect(status().isBadRequest());
+        org.junit.jupiter.api.Assertions.assertEquals(0, teams.count());
+    }
+
+    private MockMultipartFile csvUpload(List<String> headers, List<String> row) {
+        String csv = csvLine(headers) + "\n" + csvLine(row);
+        return new MockMultipartFile("file", "teams.csv", "text/csv",
+                csv.getBytes(java.nio.charset.StandardCharsets.UTF_8));
+    }
+
+    @Test
     void obsoleteImportedFieldStorageIsRemoved() {
         jdbcTemplate.execute("ALTER TABLE teams ADD COLUMN imported_fields TEXT");
+        jdbcTemplate.execute("ALTER TABLE teams ADD COLUMN imported_extras TEXT");
         jdbcTemplate.execute("CREATE TABLE team_imported_fields (team_id BIGINT NOT NULL)");
         legacyTeamFieldsCleanup.run(new DefaultApplicationArguments(new String[0]));
         org.junit.jupiter.api.Assertions.assertEquals(0,
@@ -146,6 +185,10 @@ class HackathonApplicationTests {
         org.junit.jupiter.api.Assertions.assertEquals(0,
                 jdbcTemplate.queryForObject("SELECT COUNT(*) FROM INFORMATION_SCHEMA.COLUMNS "
                         + "WHERE LOWER(TABLE_NAME) = 'teams' AND LOWER(COLUMN_NAME) = 'imported_fields'",
+                        Integer.class));
+        org.junit.jupiter.api.Assertions.assertEquals(0,
+                jdbcTemplate.queryForObject("SELECT COUNT(*) FROM INFORMATION_SCHEMA.COLUMNS "
+                        + "WHERE LOWER(TABLE_NAME) = 'teams' AND LOWER(COLUMN_NAME) = 'imported_extras'",
                         Integer.class));
     }
 
@@ -167,7 +210,7 @@ class HackathonApplicationTests {
                         .header("X-Admin-Password", ADMIN_PASSWORD))
                 .andExpect(status().isOk())
                         .andExpect(jsonPath("$[0].students.length()").value(4))
-                        .andExpect(jsonPath("$[0].importedFields.length()").value(21))
+                        .andExpect(jsonPath("$[0].importedFields.length()").value(19))
                         .andExpect(jsonPath("$[0].importedFields[1].fieldName").value("Username"))
                         .andExpect(jsonPath("$[0].importedFields[1].fieldValue").value("coordinator@example.com"))
                         .andExpect(jsonPath("$[0].importedFields[5].fieldName")
@@ -189,9 +232,9 @@ class HackathonApplicationTests {
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(new ObjectMapper().writeValueAsString(Map.of("fields", editedFields))))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$.importedFields.length()").value(21));
+                .andExpect(jsonPath("$.importedFields.length()").value(19));
         Team savedImportedFields = teams.findById(teamId).orElseThrow();
-        org.junit.jupiter.api.Assertions.assertEquals(21, savedImportedFields.getImportedFields().size());
+        org.junit.jupiter.api.Assertions.assertEquals(19, savedImportedFields.getImportedFields().size());
         org.junit.jupiter.api.Assertions.assertEquals("updated@example.test", savedImportedFields.getImportedFields()
                 .stream()
                 .filter(field -> "Username".equals(field.getFieldName()))
@@ -204,7 +247,7 @@ class HackathonApplicationTests {
                         .content("{\"fields\":[{\"columnIndex\":0,\"fieldName\":\"first\",\"fieldValue\":\"1\"},"
                                 + "{\"columnIndex\":0,\"fieldName\":\"duplicate\",\"fieldValue\":\"2\"}]}"))
                 .andExpect(status().isBadRequest());
-        org.junit.jupiter.api.Assertions.assertEquals(21,
+        org.junit.jupiter.api.Assertions.assertEquals(19,
                 teams.findById(teamId).orElseThrow().getImportedFields().size());
         mockMvc.perform(post("/api/admin/teams/{teamId}/students", teamId)
                         .header("X-Admin-Password", ADMIN_PASSWORD)
@@ -397,19 +440,18 @@ class HackathonApplicationTests {
         List<String> fixtureHeaders = parseCsvRecord(fixtureLines.get(0));
         List<String> firstTeamValues = parseCsvRecord(fixtureLines.get(1));
         MockMultipartFile scaleCsv = new MockMultipartFile("file", fixture.getFileName().toString(),
-                "text/csv", Files.readAllBytes(fixture));
+                "text/csv", canonicalTeamCsv(fixtureLines));
         mockMvc.perform(multipart("/api/admin/teams/import")
                         .file(scaleCsv)
                         .header("X-Admin-Password", ADMIN_PASSWORD))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.length()").value(250))
                 .andExpect(jsonPath("$[0].students.length()").value(4))
-                .andExpect(jsonPath("$[0].importedFields.length()").value(21))
+                .andExpect(jsonPath("$[0].importedFields.length()").value(19))
                 .andExpect(jsonPath("$[0].importedFields[1].fieldName").value("Username"))
                 .andExpect(jsonPath("$[0].importedFields[12].fieldName").value("Programme"))
                 .andExpect(jsonPath("$[0].importedFields[15].fieldName")
-                        .value("Payment Reference Number (Check your Payment Receipt- Refer Reference No column)"))
-                .andExpect(jsonPath("$[0].importedFields[20].fieldName").value("Their Gmail ID"));
+                        .value(TeamRegistrationFields.LABELS.get(15)));
 
         org.junit.jupiter.api.Assertions.assertEquals(250, teams.count());
         org.junit.jupiter.api.Assertions.assertEquals(1000, students.count());
@@ -429,18 +471,13 @@ class HackathonApplicationTests {
         Team lastTeam = teams.findAll().stream()
                 .max(Comparator.comparing(Team::getTeamNumber))
                 .orElseThrow();
-        org.junit.jupiter.api.Assertions.assertEquals(fixtureValuesFor(fixtureHeaders, firstTeamValues,
-                "Name of the Group Leader (As per SSLC Record- USE UPPERCASE FORMAT only)"),
+        org.junit.jupiter.api.Assertions.assertEquals(fixtureValuesForIndex(fixtureHeaders, firstTeamValues, 2),
                 firstTeam.getGroupLeaderName());
-        org.junit.jupiter.api.Assertions.assertEquals(fixtureValuesFor(fixtureHeaders, firstTeamValues,
-                "Register Number/Roll Number of the Group Leader"), firstTeam.getGroupLeaderRegisterNumber());
-        org.junit.jupiter.api.Assertions.assertEquals(fixtureValuesFor(fixtureHeaders, firstTeamValues,
-                "Payment Reference Number (Check your Payment Receipt- Refer  Reference No column)"),
+        org.junit.jupiter.api.Assertions.assertEquals(fixtureValuesForIndex(fixtureHeaders, firstTeamValues, 3),
+                firstTeam.getGroupLeaderRegisterNumber());
+        org.junit.jupiter.api.Assertions.assertEquals(fixtureValuesForIndex(fixtureHeaders, firstTeamValues, 15),
                 firstTeam.getPaymentReferenceNumber());
-        org.junit.jupiter.api.Assertions.assertEquals("leader001@example.test",
-                firstTeam.getImportedFields().get(19).getFieldValue());
-        org.junit.jupiter.api.Assertions.assertEquals("leader001@gmail.test",
-                firstTeam.getImportedFields().get(20).getFieldValue());
+        org.junit.jupiter.api.Assertions.assertEquals(19, firstTeam.getImportedFields().size());
         org.junit.jupiter.api.Assertions.assertEquals("MEMBER 3 TEAM 250",
                 lastTeam.getStudents().stream().filter(member -> member.getRegisterNumber().equals("26MCA1998"))
                         .findFirst().orElseThrow().getName());
@@ -644,65 +681,77 @@ class HackathonApplicationTests {
         return fields;
     }
 
-    private String fixtureValuesFor(List<String> headers, List<String> values, String expectedHeader) {
-        int index = -1;
+    private String fixtureValuesForIndex(List<String> headers, List<String> values, int expectedIndex) {
         for (int i = 0; i < headers.size(); i++) {
-            if (headers.get(i).trim().equals(expectedHeader)) {
-                index = i;
-                break;
+            if (TeamRegistrationFields.indexOf(headers.get(i)) == expectedIndex
+                    && i < values.size() && !values.get(i).isBlank()) {
+                return values.get(i);
             }
         }
-        org.junit.jupiter.api.Assertions.assertNotEquals(-1, index, "Expected fixture header was missing");
-        return values.get(index);
+        return "";
+    }
+
+    private byte[] canonicalTeamCsv(List<String> sourceLines) {
+        List<String> sourceHeaders = parseCsvRecord(sourceLines.get(0));
+        List<List<Integer>> sourceColumns = new ArrayList<>();
+        for (int fieldIndex = 0; fieldIndex < TeamRegistrationFields.LABELS.size(); fieldIndex++) {
+            sourceColumns.add(new ArrayList<>());
+        }
+        for (int column = 0; column < sourceHeaders.size(); column++) {
+            int fieldIndex = TeamRegistrationFields.indexOf(sourceHeaders.get(column));
+            if (fieldIndex >= 0) sourceColumns.get(fieldIndex).add(column);
+        }
+
+        StringBuilder canonicalCsv = new StringBuilder();
+        canonicalCsv.append(csvLine(TeamRegistrationFields.LABELS)).append('\n');
+        for (int rowIndex = 1; rowIndex < sourceLines.size(); rowIndex++) {
+            List<String> sourceValues = parseCsvRecord(sourceLines.get(rowIndex));
+            List<String> row = new ArrayList<>(TeamRegistrationFields.LABELS.size());
+            for (List<Integer> columns : sourceColumns) {
+                row.add(columns.stream()
+                        .filter(column -> column < sourceValues.size() && !sourceValues.get(column).isBlank())
+                        .map(sourceValues::get)
+                        .findFirst()
+                        .orElse(""));
+            }
+            canonicalCsv.append(csvLine(row)).append('\n');
+        }
+        return canonicalCsv.toString().getBytes(java.nio.charset.StandardCharsets.UTF_8);
+    }
+
+    private String csvLine(List<String> values) {
+        return values.stream()
+                .map(value -> "\"" + value.replace("\"", "\"\"") + "\"")
+                .collect(java.util.stream.Collectors.joining(","));
     }
 
     private MockMultipartFile teamWorkbook() throws Exception {
         try (XSSFWorkbook workbook = new XSSFWorkbook(); ByteArrayOutputStream output = new ByteArrayOutputStream()) {
             Sheet sheet = workbook.createSheet("Teams");
             Row headers = sheet.createRow(0);
-            String[] headerNames = {
-                    "Username", "Timestamp", "Name of the Group Leader", "Register Number/Roll Number of the Group Leader",
-                    "Programme", "Specialization (say for example CSE/ECE/EEE/ CSE SPEC. IN AI ML)", "Institution",
-                    "Payment Reference Number", "Name of the Institute", "City", "State", "Team Member 2 - Name",
-                    "Team Member 2 - Registration Number/Roll Number", "Team Member 3 - Name",
-                    "Team Member 3 - Registration Number/Roll Number", "Team Member 4 - Name",
-                    "Team Member 4 - Registration Number/Roll Number", "Primary Contact Number (preferably Whatsapp Number)",
-                    "Primary Email Id", "Team Member 2 - Registration Number/Enrollment Number/Register Number",
-                    "Team Member 3 - Registration Number/Enrollment Number/Register Number",
-                    "Team Member 3 - Name (As per SSLC Record)", "Team Member 4 - Registration Number/Enrollment Number/Register Number",
-                    "Team Member 4 - Name (As per SSLC Record)", "Primary Contact Number (preferably Whatsapp Number)",
-                    "Email ID", "Their Gmail ID"
-            };
-            for (int i = 0; i < headerNames.length; i++) {
-                headers.createCell(i).setCellValue(headerNames[i]);
+            for (int i = 0; i < TeamRegistrationFields.LABELS.size(); i++) {
+                headers.createCell(i).setCellValue(TeamRegistrationFields.LABELS.get(i));
             }
             Row values = sheet.createRow(1);
-            values.createCell(0).setCellValue("coordinator@example.com");
-            values.createCell(1).setCellValue("2026-10-08 04:00:00");
+            values.createCell(0).setCellValue("2026-10-08 04:00:00");
+            values.createCell(1).setCellValue("coordinator@example.com");
             values.createCell(2).setCellValue("TEST LEADER");
             values.createCell(3).setCellValue("22BCE0001");
-            values.createCell(4).setCellValue("MCA");
-            values.createCell(5).setCellValue("CSE");
-            values.createCell(6).setCellValue("VIT");
-            values.createCell(7).setCellValue("PAY-123");
-            values.createCell(8).setCellValue("Vellore Institute of Technology");
-            values.createCell(9).setCellValue("Vellore");
-            values.createCell(10).setCellValue("Tamil Nadu");
-            values.createCell(11).setCellValue("TEST MEMBER 2");
-            values.createCell(13).setCellValue("TEST MEMBER 3");
-            values.createCell(14).setCellValue("22BCE0003");
-            values.createCell(15).setCellValue("TEST MEMBER 4");
-            values.createCell(16).setCellValue("22BCE0004");
-            values.createCell(17).setCellValue("9876543210");
-            values.createCell(18).setCellValue("team@example.com");
-            values.createCell(19).setCellValue("22BCE0002");
-            values.createCell(20).setCellValue("22BCE0003");
-            values.createCell(21).setCellValue("TEST MEMBER 3");
-            values.createCell(22).setCellValue("22BCE0004");
-            values.createCell(23).setCellValue("TEST MEMBER 4");
-            values.createCell(24).setCellValue("9876543210");
-            values.createCell(25).setCellValue("leader@example.com");
-            values.createCell(26).setCellValue("leader@gmail.com");
+            values.createCell(4).setCellValue("TEST MEMBER 2");
+            values.createCell(5).setCellValue("22BCE0002");
+            values.createCell(6).setCellValue("TEST MEMBER 3");
+            values.createCell(7).setCellValue("22BCE0003");
+            values.createCell(8).setCellValue("TEST MEMBER 4");
+            values.createCell(9).setCellValue("22BCE0004");
+            values.createCell(10).setCellValue("9876543210");
+            values.createCell(11).setCellValue("leader@example.com");
+            values.createCell(12).setCellValue("MCA");
+            values.createCell(13).setCellValue("CSE");
+            values.createCell(14).setCellValue("VIT");
+            values.createCell(15).setCellValue("PAY-123");
+            values.createCell(16).setCellValue("Vellore Institute of Technology");
+            values.createCell(17).setCellValue("Vellore");
+            values.createCell(18).setCellValue("Tamil Nadu");
             workbook.write(output);
             return new MockMultipartFile("file", "teams.xlsx",
                     "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", output.toByteArray());
@@ -713,14 +762,13 @@ class HackathonApplicationTests {
         try (XSSFWorkbook workbook = new XSSFWorkbook(); ByteArrayOutputStream output = new ByteArrayOutputStream()) {
             Sheet sheet = workbook.createSheet("Teams");
             Row headers = sheet.createRow(0);
-            headers.createCell(0).setCellValue("Name of the Group Leader");
-            headers.createCell(1).setCellValue("Register Number/Roll Number of the Group Leader");
-            headers.createCell(2).setCellValue("Team Member 2 - Name");
-            headers.createCell(3).setCellValue("Team Member 2 - Registration Number/Roll Number");
+            for (int i = 0; i < TeamRegistrationFields.LABELS.size(); i++) {
+                headers.createCell(i).setCellValue(TeamRegistrationFields.LABELS.get(i));
+            }
             Row values = sheet.createRow(1);
-            values.createCell(0).setCellValue("TEST LEADER");
-            values.createCell(1).setCellValue("22BCE0003");
-            values.createCell(3).setCellValue("22BCE0004");
+            values.createCell(2).setCellValue("TEST LEADER");
+            values.createCell(3).setCellValue("22BCE0003");
+            values.createCell(5).setCellValue("22BCE0004");
             workbook.write(output);
             return new MockMultipartFile("file", "teams-missing-member-name.xlsx",
                     "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", output.toByteArray());
