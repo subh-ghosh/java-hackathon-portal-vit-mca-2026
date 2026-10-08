@@ -119,6 +119,15 @@ class HackathonApplicationTests {
 
         Long teamId = teams.findAll().get(0).getId();
         Long leaderId = students.findByRegisterNumberIgnoreCase("22BCE0001").orElseThrow().getId();
+        mockMvc.perform(put("/api/admin/teams/{teamId}/imported-fields", teamId)
+                        .header("X-Admin-Password", ADMIN_PASSWORD)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"fields\":[{\"columnIndex\":0,\"fieldName\":\"Timestamp\","
+                                + "\"fieldValue\":\"2026-10-08 04:00:00\"},{\"columnIndex\":1,"
+                                + "\"fieldName\":\"Username\",\"fieldValue\":\"updated@example.test\"}]}"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.importedFields.length()").value(2))
+                .andExpect(jsonPath("$.importedFields[1].fieldValue").value("updated@example.test"));
         mockMvc.perform(post("/api/admin/teams/{teamId}/students", teamId)
                         .header("X-Admin-Password", ADMIN_PASSWORD)
                         .contentType(MediaType.APPLICATION_JSON)

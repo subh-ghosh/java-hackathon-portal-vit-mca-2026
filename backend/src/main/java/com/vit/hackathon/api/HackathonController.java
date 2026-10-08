@@ -503,6 +503,21 @@ public class HackathonController {
         return teams.save(team);
     }
 
+    @PutMapping("/admin/teams/{teamId}/imported-fields")
+    public Team updateImportedTeamFields(@RequestHeader("X-Admin-Password") String password,
+                                         @PathVariable Long teamId, @RequestBody ImportedFieldsRequest request) {
+        requireAdmin(password);
+        if (request == null || request.fields() == null
+                || request.fields().stream().anyMatch(field -> field == null
+                || field.getColumnIndex() < 0 || field.getFieldName() == null)) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Invalid imported team fields");
+        }
+        Team team = teams.findById(teamId).orElseThrow();
+        team.getImportedFields().clear();
+        team.getImportedFields().addAll(request.fields());
+        return teams.save(team);
+    }
+
     @DeleteMapping("/admin/teams/{teamId}")
     public void deleteTeam(@RequestHeader("X-Admin-Password") String password, @PathVariable Long teamId) {
         requireAdmin(password);
@@ -628,6 +643,7 @@ public class HackathonController {
                                       List<Student> students, boolean leader, Submission submission) {}
     public record ProblemRequest(String title, String statement) {}
     public record TeamRequest(String name) {}
+    public record ImportedFieldsRequest(List<ImportedTeamField> fields) {}
     public record StudentRequest(String name, String registerNumber, String email) {}
     public record SettingsRequest(boolean loginEnabled, String startTime, String endTime) {}
     public record SubmissionRequest(String name, String registerNumber, String googleDriveLink, String githubLink) {}
