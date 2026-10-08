@@ -504,12 +504,17 @@ public class HackathonController {
     }
 
     @PutMapping("/admin/teams/{teamId}/imported-fields")
+    @Transactional
     public Team updateImportedTeamFields(@RequestHeader("X-Admin-Password") String password,
                                          @PathVariable Long teamId, @RequestBody ImportedFieldsRequest request) {
         requireAdmin(password);
         if (request == null || request.fields() == null
                 || request.fields().stream().anyMatch(field -> field == null
-                || field.getColumnIndex() < 0 || field.getFieldName() == null)) {
+                || field.getColumnIndex() < 0 || field.getFieldName() == null
+                || field.getFieldName().length() > 1000
+                || (field.getFieldValue() != null && field.getFieldValue().length() > 5000))
+                || request.fields().stream().map(ImportedTeamField::getColumnIndex).distinct().count()
+                != request.fields().size()) {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Invalid imported team fields");
         }
         Team team = teams.findById(teamId).orElseThrow();

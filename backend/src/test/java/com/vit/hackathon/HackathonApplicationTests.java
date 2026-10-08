@@ -1,5 +1,7 @@
 package com.vit.hackathon;
 
+import com.fasterxml.jackson.databind.ObjectMapper;
+import com.vit.hackathon.model.ImportedTeamField;
 import com.vit.hackathon.model.Problem;
 import com.vit.hackathon.model.Student;
 import com.vit.hackathon.model.Team;
@@ -28,8 +30,10 @@ import java.io.ByteArrayOutputStream;
 import java.io.ByteArrayInputStream;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Comparator;
+import java.util.Map;
 import java.time.OffsetDateTime;
 import java.time.ZoneOffset;
 
@@ -119,15 +123,34 @@ class HackathonApplicationTests {
 
         Long teamId = teams.findAll().get(0).getId();
         Long leaderId = students.findByRegisterNumberIgnoreCase("22BCE0001").orElseThrow().getId();
+        List<ImportedTeamField> editedFields = new ArrayList<>(teams.findById(teamId).orElseThrow().getImportedFields());
+        editedFields.stream()
+                .filter(field -> "Username".equals(field.getFieldName()))
+                .findFirst()
+                .orElseThrow()
+                .setFieldValue("updated@example.test");
         mockMvc.perform(put("/api/admin/teams/{teamId}/imported-fields", teamId)
                         .header("X-Admin-Password", ADMIN_PASSWORD)
                         .contentType(MediaType.APPLICATION_JSON)
-                        .content("{\"fields\":[{\"columnIndex\":0,\"fieldName\":\"Timestamp\","
-                                + "\"fieldValue\":\"2026-10-08 04:00:00\"},{\"columnIndex\":1,"
-                                + "\"fieldName\":\"Username\",\"fieldValue\":\"updated@example.test\"}]}"))
+                        .content(new ObjectMapper().writeValueAsString(Map.of("fields", editedFields))))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$.importedFields.length()").value(2))
-                .andExpect(jsonPath("$.importedFields[1].fieldValue").value("updated@example.test"));
+                .andExpect(jsonPath("$.importedFields.length()").value(21));
+        Team savedImportedFields = teams.findById(teamId).orElseThrow();
+        org.junit.jupiter.api.Assertions.assertEquals(21, savedImportedFields.getImportedFields().size());
+        org.junit.jupiter.api.Assertions.assertEquals("updated@example.test", savedImportedFields.getImportedFields()
+                .stream()
+                .filter(field -> "Username".equals(field.getFieldName()))
+                .findFirst()
+                .orElseThrow()
+                .getFieldValue());
+        mockMvc.perform(put("/api/admin/teams/{teamId}/imported-fields", teamId)
+                        .header("X-Admin-Password", ADMIN_PASSWORD)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"fields\":[{\"columnIndex\":0,\"fieldName\":\"first\",\"fieldValue\":\"1\"},"
+                                + "{\"columnIndex\":0,\"fieldName\":\"duplicate\",\"fieldValue\":\"2\"}]}"))
+                .andExpect(status().isBadRequest());
+        org.junit.jupiter.api.Assertions.assertEquals(21,
+                teams.findById(teamId).orElseThrow().getImportedFields().size());
         mockMvc.perform(post("/api/admin/teams/{teamId}/students", teamId)
                         .header("X-Admin-Password", ADMIN_PASSWORD)
                         .contentType(MediaType.APPLICATION_JSON)
