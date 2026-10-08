@@ -415,7 +415,7 @@ class HackathonApplicationTests {
     }
 
     @Test
-    void teamImportSupportsMultilineCellsAndRejectsMissingCells() throws Exception {
+    void teamImportSupportsMultilineCellsAndTreatsMissingOptionalTrailingCellsAsBlank() throws Exception {
         List<String> row = teamRow("MULTILINE LEADER", "26MCA9281", "team@example.test");
         row.set(14, "First campus line\nSecond campus line");
         mockMvc.perform(multipart("/api/admin/teams/import")
@@ -429,10 +429,9 @@ class HackathonApplicationTests {
         mockMvc.perform(multipart("/api/admin/teams/import")
                         .file(csvUploadRows(TeamRegistrationFields.LABELS, List.of(shortenedRow)))
                         .header("X-Admin-Password", ADMIN_PASSWORD))
-                .andExpect(status().isBadRequest())
-                .andExpect(jsonPath("$.message").value(
-                        org.hamcrest.Matchers.containsString("row 2 has 18 columns")));
-        org.junit.jupiter.api.Assertions.assertEquals(1, teams.count());
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$[0].state").value(""));
+        org.junit.jupiter.api.Assertions.assertEquals(2, teams.count());
     }
 
     @Test
@@ -540,33 +539,44 @@ class HackathonApplicationTests {
                 () -> attemptLimiter.checkAdmin("admin-limiter-test-client-b"));
     }
     @Test
-    void teamImportRejectsAnyHeaderOrRowShapeThatDiffersFromTheCanonicalContract() throws Exception {
+    void teamImportMapsReorderedHeadersAndIgnoresExtraColumnsButRequiresLoginIdentityHeaders() throws Exception {
         List<String> canonicalHeaders = TeamRegistrationFields.LABELS;
-        List<List<String>> invalidHeaders = new ArrayList<>();
-        List<String> extra = new ArrayList<>(canonicalHeaders);
-        extra.add("Extra column");
-        invalidHeaders.add(extra);
-        invalidHeaders.add(new ArrayList<>(canonicalHeaders.subList(0, canonicalHeaders.size() - 1)));
-        List<String> reordered = new ArrayList<>(canonicalHeaders);
-        java.util.Collections.swap(reordered, 0, 1);
-        invalidHeaders.add(reordered);
-        List<String> renamed = new ArrayList<>(canonicalHeaders);
-        renamed.set(0, "Submitted at");
-        invalidHeaders.add(renamed);
-
-        for (List<String> headers : invalidHeaders) {
-            MockMultipartFile file = csvUpload(headers, new ArrayList<>(java.util.Collections.nCopies(headers.size(), "")));
-            mockMvc.perform(multipart("/api/admin/teams/import")
-                            .file(file)
-                            .header("X-Admin-Password", ADMIN_PASSWORD))
-                    .andExpect(status().isBadRequest());
-        }
-        List<String> extraCell = new ArrayList<>(java.util.Collections.nCopies(canonicalHeaders.size() + 1, ""));
+        List<String> headers = new ArrayList<>(canonicalHeaders);
+        List<String> row = teamRow("FLEXIBLE IMPORT LEADER", "26MCA9010", "flexible-import");
+        java.util.Collections.swap(headers, 1, 3);
+        java.util.Collections.swap(row, 1, 3);
+        headers.add(2, "Unused administrative notes");
+        row.add(2, "ignore this");
         mockMvc.perform(multipart("/api/admin/teams/import")
-                        .file(csvUpload(canonicalHeaders, extraCell))
+                        .file(csvUpload(headers, row))
                         .header("X-Admin-Password", ADMIN_PASSWORD))
-                .andExpect(status().isBadRequest());
-        org.junit.jupiter.api.Assertions.assertEquals(0, teams.count());
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$[0].groupLeaderName").value("FLEXIBLE IMPORT LEADER"))
+                .andExpect(jsonPath("$[0].groupLeaderRegisterNumber").value("26MCA9010"))
+                .andExpect(jsonPath("$[0].registrationUsername").value("flexible-import"))
+                .andExpect(jsonPath("$[0].importedFields.length()").value(19));
+
+        List<String> missingUsernameHeader = new ArrayList<>(canonicalHeaders);
+        List<String> missingUsernameRow = teamRow("MISSING USERNAME LEADER", "26MCA9011", "unused");
+        missingUsernameHeader.remove(1);
+        missingUsernameRow.remove(1);
+        mockMvc.perform(multipart("/api/admin/teams/import")
+                        .file(csvUpload(missingUsernameHeader, missingUsernameRow))
+                        .header("X-Admin-Password", ADMIN_PASSWORD))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.message").value(org.hamcrest.Matchers.containsString("Username")));
+
+        List<String> duplicateUsernameHeader = new ArrayList<>(canonicalHeaders);
+        List<String> duplicateUsernameRow = teamRow("DUPLICATE USERNAME LEADER", "26MCA9012", "duplicate-user");
+        duplicateUsernameHeader.add("Username");
+        duplicateUsernameRow.add("another-user");
+        mockMvc.perform(multipart("/api/admin/teams/import")
+                        .file(csvUpload(duplicateUsernameHeader, duplicateUsernameRow))
+                        .header("X-Admin-Password", ADMIN_PASSWORD))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.message").value(org.hamcrest.Matchers.containsString("duplicate columns")));
+
+        org.junit.jupiter.api.Assertions.assertEquals(1, teams.count());
     }
 
     private MockMultipartFile csvUpload(List<String> headers, List<String> row) {
@@ -619,15 +629,15 @@ class HackathonApplicationTests {
         validRow.set(1, "test-user@example.test");
         validRow.set(2, "TEST LEADER");
         validRow.set(3, "26MCA9001");
-        List<String> extraCellRow = new ArrayList<>(validRow);
-        extraCellRow.add("unexpected");
+        List<String> missingLeaderName = new ArrayList<>(validRow);
+        missingLeaderName.set(2, "");
 
         mockMvc.perform(multipart("/api/admin/teams/import")
-                        .file(csvUploadRows(TeamRegistrationFields.LABELS, List.of(validRow, extraCellRow)))
+                        .file(csvUploadRows(TeamRegistrationFields.LABELS, List.of(validRow, missingLeaderName)))
                         .header("X-Admin-Password", ADMIN_PASSWORD))
                 .andExpect(status().isBadRequest())
                 .andExpect(jsonPath("$.message").value(
-                        org.hamcrest.Matchers.containsString("row 3 has 20 columns")));
+                        org.hamcrest.Matchers.containsString("Missing or invalid group leader name on CSV row 3")));
         org.junit.jupiter.api.Assertions.assertEquals(0, teams.count());
         org.junit.jupiter.api.Assertions.assertEquals(0, students.count());
 
@@ -636,9 +646,8 @@ class HackathonApplicationTests {
         mockMvc.perform(multipart("/api/admin/teams/import")
                         .file(csvUpload(renamedHeaders, validRow))
                         .header("X-Admin-Password", ADMIN_PASSWORD))
-                .andExpect(status().isBadRequest())
-                .andExpect(jsonPath("$.message").value(
-                        org.hamcrest.Matchers.containsString("column 1 must be exactly: Timestamp")));
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$[0].registrationTimestamp").value(""));
     }
 
     @Test

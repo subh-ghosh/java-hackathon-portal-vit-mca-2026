@@ -550,16 +550,19 @@ public class HackathonController {
             }
             List<String> headers = records.get(0);
             List<String> expectedHeaders = TeamRegistrationFields.LABELS;
-            if (headers.size() != expectedHeaders.size()) {
-                throw new ResponseStatusException(HttpStatus.BAD_REQUEST,
-                        "Team import must contain exactly these 19 columns, in this exact order: "
-                                + String.join(" | ", expectedHeaders));
-            }
-            for (int i = 0; i < expectedHeaders.size(); i++) {
-                if (!expectedHeaders.get(i).equals(headers.get(i))) {
+            Map<Integer, Integer> sourceColumns = new HashMap<>();
+            for (int column = 0; column < headers.size(); column++) {
+                int fieldIndex = TeamRegistrationFields.indexOf(headers.get(column));
+                if (fieldIndex < 0) continue;
+                if (sourceColumns.putIfAbsent(fieldIndex, column) != null) {
                     throw new ResponseStatusException(HttpStatus.BAD_REQUEST,
-                            "Team import column " + (i + 1) + " must be exactly: " + expectedHeaders.get(i)
-                                    + ". Use the supplied column names and order; do not add, remove, or rename columns.");
+                            "Team import contains duplicate columns for: " + expectedHeaders.get(fieldIndex));
+                }
+            }
+            for (int requiredFieldIndex : List.of(1, 2, 3)) {
+                if (!sourceColumns.containsKey(requiredFieldIndex)) {
+                    throw new ResponseStatusException(HttpStatus.BAD_REQUEST,
+                            "Team import is missing the required column: " + expectedHeaders.get(requiredFieldIndex));
                 }
             }
             List<Team> imported = new ArrayList<>();
@@ -568,15 +571,11 @@ public class HackathonController {
                 List<String> values = records.get(recordIndex);
                 int rowNumber = recordIndex + 1;
                 if (values.stream().allMatch(String::isBlank)) continue;
-                if (values.size() != expectedHeaders.size()) {
-                    throw new ResponseStatusException(HttpStatus.BAD_REQUEST,
-                            "Team import row " + rowNumber + " has " + values.size()
-                                    + " columns; exactly 19 are required");
-                }
                 List<ImportedTeamField> importedFields = new ArrayList<>(expectedHeaders.size());
                 for (int column = 0; column < expectedHeaders.size(); column++) {
-                    importedFields.add(new ImportedTeamField(column, expectedHeaders.get(column),
-                            valueAt(values, column)));
+                    Integer sourceColumn = sourceColumns.get(column);
+                    String fieldValue = sourceColumn == null ? "" : valueAt(values, sourceColumn);
+                    importedFields.add(new ImportedTeamField(column, expectedHeaders.get(column), fieldValue));
                 }
                 String teamUsername = normalizeTeamUsername(importedFieldValue(importedFields, 1));
                 if (teamUsername.isBlank()) {
