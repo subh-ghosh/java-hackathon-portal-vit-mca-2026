@@ -921,7 +921,7 @@ class HackathonApplicationTests {
         mockMvc.perform(put("/api/admin/settings")
                         .header("X-Admin-Password", ADMIN_PASSWORD)
                         .contentType(MediaType.APPLICATION_JSON)
-                        .content("{\"loginEnabled\":true,\"startTime\":\"" + now.minusMinutes(1)
+                        .content("{\"loginEnabled\":false,\"startTime\":\"" + now.minusMinutes(1)
                                 + "\",\"endTime\":\"" + now.plusMinutes(1) + "\"}"))
                 .andExpect(status().isOk());
         mockMvc.perform(post("/api/student/login")

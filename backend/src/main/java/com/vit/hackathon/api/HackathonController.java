@@ -1224,12 +1224,13 @@ public class HackathonController {
     }
 
     private void enforceLoginWindow() {
-        if (!Boolean.parseBoolean(settingValue("login-enabled", "true"))) {
+        String start = settingValue("login-start", "");
+        String end = settingValue("login-end", "");
+        boolean scheduled = !start.isBlank() || !end.isBlank();
+        if (!scheduled && !Boolean.parseBoolean(settingValue("login-enabled", "true"))) {
             throw new ResponseStatusException(HttpStatus.FORBIDDEN, "Participant login is currently disabled");
         }
         OffsetDateTime now = OffsetDateTime.now(ZoneOffset.UTC);
-        String start = settingValue("login-start", "");
-        String end = settingValue("login-end", "");
         try {
             if (!start.isBlank() && now.isBefore(OffsetDateTime.parse(start))) {
                 throw new ResponseStatusException(HttpStatus.FORBIDDEN, "Participant login has not started");
