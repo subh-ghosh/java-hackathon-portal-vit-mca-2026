@@ -94,6 +94,9 @@ body:has(.login-shell) .mode-switch{top:20px;bottom:auto}
 .session-label{color:var(--muted);font-size:.78rem}
 .checkbox-label input{flex:0 0 auto}
 .table-wrap,.problem-list{scrollbar-color:#c5d6c9 #f4f7f3;scrollbar-width:thin}
+.loading-state{min-height:92px;display:flex;align-items:center;justify-content:center;gap:12px;padding:20px;color:#718077;font-size:.85rem}
+.loading-spinner{width:18px;height:18px;flex:0 0 18px;border:2px solid #dce8dd;border-top-color:#34794d;border-radius:50%;animation:portal-spin .75s linear infinite}
+@keyframes portal-spin{to{transform:rotate(360deg)}}
 @media(max-width:760px){
   .content{padding:38px 20px}
   .app-shell header{height:68px;padding:0 20px}
