@@ -12,6 +12,10 @@
 @media(max-width:600px){.modal-backdrop{padding:12px}.member-modal{padding:24px 18px}.modal-student-form{grid-template-columns:1fr}.modal-student-form button{grid-column:auto}.modal-member{display:block}.modal-member .row-actions{margin-top:12px;justify-content:flex-start}.imported-fields-grid{grid-template-columns:1fr}}
 
 .admin-actions>.card{min-width:0;height:fit-content}
+.admin-actions{grid-template-columns:repeat(2,minmax(0,1fr))}
+.csv-form-top{display:flex;align-items:center;justify-content:space-between;gap:12px}
+.csv-form-top button{width:auto;flex-shrink:0;padding:10px 14px}
+@media(max-width:800px){.admin-actions{grid-template-columns:1fr}}
 .inline-form{display:flex;flex-direction:column;align-items:stretch;gap:14px}
 .inline-form .eyebrow{margin-bottom:6px}
 .inline-form button{width:100%;margin-top:8px}
