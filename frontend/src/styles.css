@@ -60,6 +60,7 @@
 .checkbox-label{display:flex;align-items:center;gap:10px;margin:18px 0;color:#365542;font-size:.85rem;font-weight:700}
 .checkbox-label input{width:18px;height:18px;accent-color:#34794d}
 .settings-fields{display:grid;grid-template-columns:1fr 1fr;gap:16px}
+.settings-fields::after{content:"Times are entered in your browser's local timezone.";grid-column:1/-1;color:#718077;font-size:.75rem}
 .settings-fields label{display:block;color:#53645a;font-size:.75rem;font-weight:700}
 .settings-fields input{display:block;width:100%;border:1px solid #dce4de;border-radius:9px;padding:12px;margin-top:8px}
 .submission-card h2{margin-top:18px}

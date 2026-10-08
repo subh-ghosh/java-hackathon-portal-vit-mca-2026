@@ -7,6 +7,7 @@ import com.vit.hackathon.model.Student;
 import com.vit.hackathon.model.Team;
 import com.vit.hackathon.model.TeamRegistrationFields;
 import com.vit.hackathon.config.LegacyTeamFieldsCleanup;
+import com.vit.hackathon.security.AuthenticationAttemptLimiter;
 import com.vit.hackathon.repository.AppSettingRepository;
 import com.vit.hackathon.repository.ProblemRepository;
 import com.vit.hackathon.repository.SubmissionRepository;
@@ -22,6 +23,7 @@ import org.junit.jupiter.api.BeforeEach;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
 import org.springframework.boot.test.context.SpringBootTest;
+import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
 import org.springframework.mock.web.MockMultipartFile;
 import org.springframework.test.context.DynamicPropertyRegistry;
@@ -42,6 +44,7 @@ import java.time.OffsetDateTime;
 import java.time.ZoneOffset;
 
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.multipart;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.options;
 import org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder;
 
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
@@ -91,6 +94,9 @@ class HackathonApplicationTests {
 
     @Autowired
     private JdbcTemplate jdbcTemplate;
+
+    @Autowired
+    private AuthenticationAttemptLimiter attemptLimiter;
 
     @Autowired
     private LegacyTeamFieldsCleanup legacyTeamFieldsCleanup;
@@ -444,6 +450,56 @@ class HackathonApplicationTests {
                 .andExpect(status().isBadRequest());
     }
 
+    @Test
+    void corsAllowsConfiguredPortalOriginsAndRejectsUntrustedOrigins() throws Exception {
+        mockMvc.perform(options("/api/public/config")
+                        .header("Origin", "https://vit-hackathon-portal.pages.dev")
+                        .header("Access-Control-Request-Method", "GET"))
+                .andExpect(status().isOk())
+                .andExpect(header().string("Access-Control-Allow-Origin",
+                        "https://vit-hackathon-portal.pages.dev"));
+
+        mockMvc.perform(options("/api/public/config")
+                        .header("Origin", "https://untrusted.example")
+                        .header("Access-Control-Request-Method", "GET"))
+                .andExpect(status().isForbidden());
+    }
+
+    @Test
+    void failedParticipantAttemptsAreThrottledAndSuccessfulAuthenticationClearsTheWindow() {
+        String username = "limiter-test-team";
+        String registerNumber = "26MCA9920";
+        for (int failure = 1; failure < 20; failure++) {
+            attemptLimiter.participantFailed(username, registerNumber);
+        }
+        org.springframework.web.server.ResponseStatusException threshold =
+                org.junit.jupiter.api.Assertions.assertThrows(
+                        org.springframework.web.server.ResponseStatusException.class,
+                        () -> attemptLimiter.participantFailed(username, registerNumber));
+        org.junit.jupiter.api.Assertions.assertEquals(HttpStatus.TOO_MANY_REQUESTS, threshold.getStatusCode());
+        org.junit.jupiter.api.Assertions.assertThrows(
+                org.springframework.web.server.ResponseStatusException.class,
+                () -> attemptLimiter.checkParticipant(username, registerNumber));
+
+        attemptLimiter.participantSucceeded(username, registerNumber);
+        org.junit.jupiter.api.Assertions.assertDoesNotThrow(
+                () -> attemptLimiter.checkParticipant(username, registerNumber));
+    }
+
+    @Test
+    void adminAttemptBucketsAreIsolatedByClientIdentity() {
+        for (int failure = 1; failure < 30; failure++) {
+            attemptLimiter.adminFailed("admin-limiter-test-client-a");
+        }
+        org.junit.jupiter.api.Assertions.assertThrows(
+                org.springframework.web.server.ResponseStatusException.class,
+                () -> attemptLimiter.adminFailed("admin-limiter-test-client-a"));
+        org.junit.jupiter.api.Assertions.assertThrows(
+                org.springframework.web.server.ResponseStatusException.class,
+                () -> attemptLimiter.checkAdmin("admin-limiter-test-client-a"));
+        org.junit.jupiter.api.Assertions.assertDoesNotThrow(
+                () -> attemptLimiter.checkAdmin("admin-limiter-test-client-b"));
+    }
     @Test
     void teamImportRejectsAnyHeaderOrRowShapeThatDiffersFromTheCanonicalContract() throws Exception {
         List<String> canonicalHeaders = TeamRegistrationFields.LABELS;

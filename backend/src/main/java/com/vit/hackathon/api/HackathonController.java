@@ -2,6 +2,7 @@ package com.vit.hackathon.api;
 
 import com.vit.hackathon.model.*;
 import com.vit.hackathon.repository.*;
+import com.vit.hackathon.security.AuthenticationAttemptLimiter;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.http.HttpStatus;
 import org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder;
@@ -9,6 +10,8 @@ import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.bind.annotation.*;
 import org.springframework.web.server.ResponseStatusException;
+import org.springframework.web.context.request.RequestContextHolder;
+import org.springframework.web.context.request.ServletRequestAttributes;
 import org.springframework.web.multipart.MultipartFile;
 import org.apache.poi.ss.usermodel.DataFormatter;
 import org.apache.poi.ss.usermodel.FormulaEvaluator;
@@ -51,25 +54,27 @@ import java.util.stream.Collectors;
 
 @RestController
 @RequestMapping("/api")
-@CrossOrigin(origins = "*")
 public class HackathonController {
     private final TeamRepository teams;
     private final StudentRepository students;
     private final ProblemRepository problems;
     private final AppSettingRepository settings;
     private final SubmissionRepository submissions;
+    private final AuthenticationAttemptLimiter attemptLimiter;
     private final String adminPassword;
     private final PasswordEncoder passwordEncoder = new BCryptPasswordEncoder();
 
     public HackathonController(TeamRepository teams, StudentRepository students, ProblemRepository problems,
                                AppSettingRepository settings,
                                SubmissionRepository submissions,
+                               AuthenticationAttemptLimiter attemptLimiter,
                                @Value("${app.admin.password}") String adminPassword) {
         this.teams = teams;
         this.students = students;
         this.problems = problems;
         this.settings = settings;
         this.submissions = submissions;
+        this.attemptLimiter = attemptLimiter;
         this.adminPassword = adminPassword;
     }
 
@@ -1049,9 +1054,23 @@ public class HackathonController {
     }
 
     private void requireAdmin(String password) {
+        String clientIdentity = adminClientIdentity();
+        attemptLimiter.checkAdmin(clientIdentity);
         if (password == null || adminPassword == null || !passwordEncoder.matches(password, adminPassword)) {
+            attemptLimiter.adminFailed(clientIdentity);
             throw new ResponseStatusException(HttpStatus.UNAUTHORIZED, "Invalid admin password");
         }
+        attemptLimiter.adminSucceeded(clientIdentity);
+    }
+
+    private String adminClientIdentity() {
+        if (RequestContextHolder.getRequestAttributes() instanceof ServletRequestAttributes attributes) {
+            String remoteAddress = attributes.getRequest().getRemoteAddr();
+            if (remoteAddress != null && !remoteAddress.isBlank()) {
+                return remoteAddress;
+            }
+        }
+        return "unknown-client";
     }
 
     private Student authenticateParticipant(String username, String registerNumber) {
@@ -1061,12 +1080,15 @@ public class HackathonController {
             throw new ResponseStatusException(HttpStatus.UNAUTHORIZED,
                     "Invalid team username or register number");
         }
+        attemptLimiter.checkParticipant(normalizedUsername, normalizedRegister);
         List<Student> matches = students.findByLoginUsernameAndRegisterNumber(
                 normalizedUsername, normalizedRegister);
         if (matches.size() != 1) {
+            attemptLimiter.participantFailed(normalizedUsername, normalizedRegister);
             throw new ResponseStatusException(HttpStatus.UNAUTHORIZED,
                     "Invalid team username or register number");
         }
+        attemptLimiter.participantSucceeded(normalizedUsername, normalizedRegister);
         return matches.get(0);
     }
 

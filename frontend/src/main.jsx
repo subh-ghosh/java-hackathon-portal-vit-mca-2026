@@ -5,6 +5,36 @@ import './styles.css';
 const API = import.meta.env.VITE_API_URL || 'https://vit-hackathon-api.onrender.com/api';
 const SESSION_TTL = 8 * 60 * 60 * 1000;
 
+function toLocalDateTimeInput(value) {
+  if (!value) return '';
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return '';
+  return new Date(date.getTime() - date.getTimezoneOffset() * 60_000).toISOString().slice(0, 16);
+}
+
+function toLocalLoginSettings(settings) {
+  return {
+    ...settings,
+    startTime: toLocalDateTimeInput(settings.startTime),
+    endTime: toLocalDateTimeInput(settings.endTime)
+  };
+}
+
+function toServerLoginSettings(settings) {
+  const toIsoString = value => value ? new Date(value).toISOString() : '';
+  return {
+    ...settings,
+    startTime: toIsoString(settings.startTime),
+    endTime: toIsoString(settings.endTime)
+  };
+}
+
+function reportRequestError(message) {
+  if (typeof window !== 'undefined') {
+    window.dispatchEvent(new CustomEvent('portal-request-error', { detail: message }));
+  }
+}
+
 function readSession(key) {
   try {
     const value = JSON.parse(sessionStorage.getItem(key) || 'null');
@@ -25,13 +55,22 @@ function clearSession(key) {
 
 async function request(path, options = {}) {
   const isFormData = options.body instanceof FormData;
-  const response = await fetch(`${API}${path}`, {
-    ...options,
-    headers: { ...(isFormData ? {} : { 'Content-Type': 'application/json' }), ...(options.headers || {}) }
-  });
+  let response;
+  try {
+    response = await fetch(`${API}${path}`, {
+      ...options,
+      headers: { ...(isFormData ? {} : { 'Content-Type': 'application/json' }), ...(options.headers || {}) }
+    });
+  } catch (error) {
+    const message = error instanceof Error ? error.message : 'The server could not be reached.';
+    reportRequestError(message);
+    throw error;
+  }
   const body = await response.json().catch(() => ({}));
   if (!response.ok) {
-    throw new Error(body.message || body.detail || body.title || 'Something went wrong');
+    const message = body.message || body.detail || body.title || 'Something went wrong';
+    reportRequestError(message);
+    throw new Error(message);
   }
   return body;
 }
@@ -218,6 +257,20 @@ function Admin() {
     clearSession('hackathon-admin-session');
   }, []);
   useEffect(() => {
+    const showRequestError = event => setErrorNotice(event.detail || 'The request failed.');
+    const showUnhandledError = event => {
+      const reason = event.reason;
+      setErrorNotice(reason instanceof Error ? reason.message : 'The admin action failed.');
+      event.preventDefault();
+    };
+    window.addEventListener('portal-request-error', showRequestError);
+    window.addEventListener('unhandledrejection', showUnhandledError);
+    return () => {
+      window.removeEventListener('portal-request-error', showRequestError);
+      window.removeEventListener('unhandledrejection', showUnhandledError);
+    };
+  }, []);
+  useEffect(() => {
     if (!authed) setPassword('');
   }, [authed]);
   useEffect(() => {
@@ -240,7 +293,7 @@ function Admin() {
         request('/admin/settings', { headers: authHeaders }),
         request('/admin/submissions', { headers: authHeaders })
       ]);
-      setTeams(loadedTeams); setProblems(loadedProblems); setLoginSettings(loadedSettings); setSubmissions(loadedSubmissions); setAuthed(true);
+      setTeams(loadedTeams); setProblems(loadedProblems); setLoginSettings(toLocalLoginSettings(loadedSettings)); setSubmissions(loadedSubmissions); setAuthed(true);
     } catch (error) {
       setLoadError(true);
       throw error;
@@ -250,8 +303,8 @@ function Admin() {
   }
   async function saveLoginSettings(event) {
     event.preventDefault();
-    const saved = await request('/admin/settings', { method: 'PUT', headers: headers(), body: JSON.stringify(loginSettings) });
-    setLoginSettings(saved); setNotice('Participant login settings updated.');
+    const saved = await request('/admin/settings', { method: 'PUT', headers: headers(), body: JSON.stringify(toServerLoginSettings(loginSettings)) });
+    setLoginSettings(toLocalLoginSettings(saved)); setNotice('Participant login settings updated.');
   }
   function confirmClearAll(label, count) {
     return window.confirm(`Clear all ${count} ${label}? This cannot be undone.`)

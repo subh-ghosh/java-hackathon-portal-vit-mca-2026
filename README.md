@@ -32,6 +32,7 @@ cd backend
 Set `DATABASE_URL`, `DATABASE_USERNAME`, and `DATABASE_PASSWORD` for Neon or a local PostgreSQL database.
 Set `ADMIN_PASSWORD` to a strong, private coordinator password. These values are required environment variables and are intentionally not stored in Git.
 `ADMIN_PASSWORD` must be a BCrypt hash in production.
+Configure `CORS_ALLOWED_ORIGIN_PATTERNS` as a comma-separated list of trusted frontend origins in production. The default permits localhost and the portal's Cloudflare Pages domains. Authentication throttling is held in the backend process's memory, so it resets on restart and is not shared across multiple instances. Admin throttling uses the socket peer address and deliberately does not trust client-supplied forwarding headers; if the hosting proxy masks client addresses, add a trusted edge/API rate limit before public launch or scaling out.
 
 ### Frontend
 
@@ -49,3 +50,4 @@ Set `VITE_API_URL` when the backend is not running at `http://localhost:8080`.
 - In Render, set the Neon JDBC URL as `jdbc:postgresql://<host>/<database>?sslmode=require`.
 - Deploy `frontend/` to Cloudflare Pages with build command `npm run build`, output directory `dist`, and `VITE_API_URL` pointing to the Render API URL.
 - After the Cloudflare Pages domain is ready, configure a custom VIT domain/subdomain through the college DNS administrator.
+- Set `CORS_ALLOWED_ORIGIN_PATTERNS` to the exact production frontend origin(s) when deploying; use the Cloudflare Pages defaults only when those are the actual origins.
