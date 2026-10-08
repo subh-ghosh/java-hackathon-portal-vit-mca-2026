@@ -111,6 +111,45 @@ class HackathonApplicationTests {
     }
 
     @Test
+    void bulkProblemVisibilityEnablesAndDisablesEveryProblemAndRequiresAdmin() throws Exception {
+        Problem first = new Problem();
+        first.setTitle("Problem One");
+        first.setStatement("First problem statement");
+        first.setEnabled(false);
+        problems.save(first);
+
+        Problem second = new Problem();
+        second.setTitle("Problem Two");
+        second.setStatement("Second problem statement");
+        second.setEnabled(true);
+        problems.save(second);
+
+        mockMvc.perform(put("/api/admin/problems/enabled")
+                        .header("X-Admin-Password", ADMIN_PASSWORD)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"enabled\":true}"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$[0].enabled").value(true))
+                .andExpect(jsonPath("$[1].enabled").value(true));
+        org.junit.jupiter.api.Assertions.assertTrue(problems.findAll().stream().allMatch(Problem::isEnabled));
+
+        mockMvc.perform(put("/api/admin/problems/enabled")
+                        .header("X-Admin-Password", ADMIN_PASSWORD)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"enabled\":false}"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$[0].enabled").value(false))
+                .andExpect(jsonPath("$[1].enabled").value(false));
+        org.junit.jupiter.api.Assertions.assertTrue(problems.findAll().stream().noneMatch(Problem::isEnabled));
+
+        mockMvc.perform(put("/api/admin/problems/enabled")
+                        .header("X-Admin-Password", "incorrect-password")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"enabled\":true}"))
+                .andExpect(status().isUnauthorized());
+    }
+
+    @Test
     void manualTeamCreationStoresAllFieldsAndCreatesParticipantRoster() throws Exception {
         List<ImportedTeamField> fields = new ArrayList<>();
         for (int index = 0; index < 19; index++) {

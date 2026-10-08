@@ -291,6 +291,19 @@ public class HackathonController {
         return problems.save(problem);
     }
 
+    @PutMapping("/admin/problems/enabled")
+    @Transactional
+    public List<Problem> setAllProblemsEnabled(@RequestHeader("X-Admin-Password") String password,
+                                               @RequestBody EnabledRequest request) {
+        requireAdmin(password);
+        if (request == null) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Problem enabled state is required");
+        }
+        List<Problem> allProblems = problems.findAll();
+        allProblems.forEach(problem -> problem.setEnabled(request.enabled()));
+        return problems.saveAll(allProblems);
+    }
+
     @PostMapping("/admin/problems/import")
     @Transactional
     public List<Problem> importProblems(@RequestHeader("X-Admin-Password") String password,
