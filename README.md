@@ -10,6 +10,7 @@ Full-stack hackathon management portal built with Spring Boot, React, and Postgr
 - Shared problem statement for every member of a team
 - Read-only student view of team members and assigned problem
 - Admin-only team, student, problem, and assignment management
+- Admin submission review and Excel export, with double confirmation for bulk clears
 
 ## Local setup
 
