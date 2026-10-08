@@ -67,3 +67,59 @@
 .submission-card button{margin-top:20px}
 .table-wrap a{color:#34794d;font-weight:700}
 @media(max-width:600px){.settings-fields{grid-template-columns:1fr}.settings-form .card-top{align-items:flex-start;gap:12px;flex-direction:column}.settings-form .card-top button{width:100%}}
+
+/* Shared interaction and spacing rules across participant and coordinator screens. */
+:root{--page:#f5f7f3;--surface:#fff;--ink:#17221b;--muted:#718077;--line:#dce4de;--brand:#173e2c;--accent:#b5ef65;--radius-card:18px;--radius-control:10px;--section-gap:22px}
+body{color:var(--ink);background:var(--page)}
+button{min-height:40px;border-radius:var(--radius-control);font-weight:700;transition:background-color .16s ease,border-color .16s ease,color .16s ease,box-shadow .16s ease,transform .16s ease}
+button:hover:not(:disabled){transform:translateY(-1px)}
+button:disabled{cursor:not-allowed;opacity:.62}
+button:focus-visible,a:focus-visible,input:focus-visible,textarea:focus-visible,select:focus-visible{outline:3px solid #83bd68;outline-offset:2px}
+input:not([type=checkbox]):not([type=radio]),textarea,select{border:1px solid var(--line);border-radius:var(--radius-control);color:var(--ink);background:#fff;transition:border-color .16s ease,box-shadow .16s ease}
+input:not([type=checkbox]):not([type=radio]):focus,textarea:focus,select:focus{border-color:#57916a;box-shadow:0 0 0 3px #57916a20;outline:0}
+input::placeholder,textarea::placeholder{color:#9aa69e}
+.card{border-radius:var(--radius-card);box-shadow:0 12px 34px #112e250c}
+.admin-content{gap:var(--section-gap)}
+.student-grid{gap:var(--section-gap)}
+.admin-actions{gap:var(--section-gap)}
+.settings-form,.table-card,.team-card,.problem-card,.submission-card{min-width:0}
+.small-button,.ghost{min-height:36px}
+.small-button{border-radius:8px}
+.danger-button{color:#ad4b43;border-color:#f0d3cf;background:#fff}
+.danger-button:hover:not(:disabled){color:#91362f;background:#fff3f1;border-color:#e9bdb7}
+.mode-switch{min-height:44px;box-shadow:0 8px 24px #103c2b26}
+body:has(.login-shell) .mode-switch{top:20px;bottom:auto}
+.error,.success{line-height:1.5}
+.admin-content>.success,.admin-content>.error{margin:0}
+.session-label{color:var(--muted);font-size:.78rem}
+.checkbox-label input{flex:0 0 auto}
+.table-wrap,.problem-list{scrollbar-color:#c5d6c9 #f4f7f3;scrollbar-width:thin}
+@media(max-width:760px){
+  .content{padding:38px 20px}
+  .app-shell header{height:68px;padding:0 20px}
+  .header-actions{gap:10px}
+  .session-label{display:none}
+  .student-grid{grid-template-columns:1fr}
+  .welcome h1{font-size:clamp(2.25rem,10vw,3.5rem)}
+  .card{padding:24px}
+  .table-card{padding:24px 0 0}
+  .mode-switch{right:14px;bottom:14px}
+}
+@media(max-width:520px){
+  .login-shell{grid-template-columns:1fr}
+  .hero{padding:42px 26px 30px}
+  .hero h1{font-size:clamp(2.7rem,13vw,4rem);margin:18px 0}
+  .hero p{font-size:.95rem}
+  .stat-row{gap:22px;margin-top:30px}
+  .stat-row strong{font-size:1.2rem}
+  .login-card{margin:0 18px 34px;padding:24px}
+  .admin-login{padding:8vh 18px}
+  .admin-login .login-card{margin:0 auto}
+  .student-summary{grid-template-columns:1fr}
+  .problem-library-actions{justify-content:flex-start;flex-wrap:wrap}
+  .library-card-top{align-items:flex-start;gap:14px;flex-direction:column}
+  .library-card-top .problem-library-actions{width:100%}
+  .library-card-top .small-button{flex:1}
+  .problem-row{align-items:flex-start;flex-direction:column}
+  .row-actions{width:100%;flex-wrap:wrap}
+}
