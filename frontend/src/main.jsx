@@ -194,6 +194,23 @@ function Login({ onLogin, onAdmin }) {
           <p>School of Computer Science Engineering and Information Systems · October 10 &amp; 11, 2026</p>
         </div>
         <div className="event-detail-grid">
+          <article className="event-detail-card event-registration-card">
+            <span className="eyebrow">ELIGIBILITY &amp; REGISTRATION</span>
+            <h3>Who can participate</h3>
+            <p>Open to undergraduate and postgraduate students, Ph.D. students, research scholars and faculty from recognized Indian institutions pursuing Engineering, Science, Technology, MCA, M.Tech or equivalent programmes.</p>
+            <p><b>Team size:</b> Participate individually or in a team of up to four members. Teams of four are strongly recommended.</p>
+            <h4>Registration steps and fee</h4>
+            <p>Register using the Google Form, then sign in to the VIT events portal to make the registration payment.</p>
+            <div className="event-registration-actions">
+              <a href="https://forms.gle/Sgyfwqm69c8naWzt7" target="_blank" rel="noreferrer">Open registration form <span aria-hidden="true">↗</span></a>
+              <a href="https://events.vit.ac.in/" target="_blank" rel="noreferrer">VIT events &amp; payment portal <span aria-hidden="true">↗</span></a>
+            </div>
+            <ul>
+              <li>VIT Vellore students: ₹300 (GST included).</li>
+              <li>Students from other institutions: ₹500 (GST included).</li>
+            </ul>
+            <p className="event-registration-note">The registration form currently indicates that it is no longer accepting responses. Contact the organizers if you need assistance.</p>
+          </article>
           <article className="event-detail-card event-schedule-card">
             <span className="eyebrow">SCHEDULE AT A GLANCE</span>
             <h3>Key event times</h3>
@@ -308,7 +325,7 @@ function Login({ onLogin, onAdmin }) {
               <h4>Awards and certificates</h4>
               <ul>
                 <li>Cash prizes will be awarded to the first- and second-place teams based on the Organizing Committee’s evaluation criteria.</li>
-                <li>Participation certificates are for participants who successfully registered, cleared Round 1, actively participated and completed the event according to the guidelines.</li>
+                <li>Participation certificates will be awarded to registered participants who successfully complete the hackathon.</li>
               </ul>
               <h4>Travel and accommodation policy</h4>
               <ul>
@@ -321,6 +338,25 @@ function Login({ onLogin, onAdmin }) {
           </details>
         </div>
         <p className="event-guidelines-footer">Please read the instructions carefully and comply with the event guidelines. We look forward to your active participation in the GreenOps hackathon.</p>
+        <section className="event-support" aria-labelledby="event-support-title">
+          <div>
+            <span className="eyebrow">NEED HELP?</span>
+            <h3 id="event-support-title">Event support</h3>
+            <p>For questions about the hackathon, contact the coordinators:</p>
+          </div>
+          <div className="event-support-contacts">
+            <article className="event-support-contact">
+              <h4>Dr. B. Senthil Murugan</h4>
+              <a href="tel:+919047151090">+91 90471 51090</a>
+              <a href="mailto:senthilmurugan.b@vit.ac.in">senthilmurugan.b@vit.ac.in</a>
+            </article>
+            <article className="event-support-contact">
+              <h4>Dr. A. Vijayarani</h4>
+              <a href="tel:+917904440327">+91 79044 40327</a>
+              <a href="mailto:vijayarani.a@vit.ac.in">vijayarani.a@vit.ac.in</a>
+            </article>
+          </div>
+        </section>
       </section>
     </main>
   );
