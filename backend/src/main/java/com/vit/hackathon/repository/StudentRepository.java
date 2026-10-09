@@ -6,5 +6,4 @@ import java.util.List;
 
 public interface StudentRepository extends JpaRepository<Student, Long> {
     List<Student> findAllByRegisterNumberIgnoreCase(String registerNumber);
-    List<Student> findByLoginUsernameAndRegisterNumber(String loginUsername, String registerNumber);
 }

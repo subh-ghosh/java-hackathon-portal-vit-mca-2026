@@ -6,10 +6,7 @@ import jakarta.persistence.*;
 import java.util.Locale;
 
 @Entity
-@Table(name = "students",
-        uniqueConstraints = @UniqueConstraint(name = "uk_students_login_identity",
-                columnNames = {"login_username", "register_number"}),
-        indexes = @Index(name = "idx_students_team_id", columnList = "team_id"))
+@Table(name = "students", indexes = @Index(name = "idx_students_team_id", columnList = "team_id"))
 public class Student {
     @Id @GeneratedValue(strategy = GenerationType.IDENTITY)
     private Long id;

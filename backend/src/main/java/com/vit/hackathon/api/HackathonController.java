@@ -791,15 +791,6 @@ public class HackathonController {
         requirePrimaryContactNumber(importedFieldValue(fields, 10));
         ensureTeamContactNumberAvailable(importedFieldValue(fields, 10), null, null);
         ensureTeamEmailAvailable(teamEmail, null, null);
-        Set<String> participantNumbers = new HashSet<>();
-        for (ImportedParticipant participant : participants) {
-            String registerNumber = normalizeRegisterNumber(participant.registerNumber());
-            if (!participantNumbers.add(registerNumber)) {
-                throw new ResponseStatusException(HttpStatus.BAD_REQUEST,
-                        "Register number " + registerNumber + " appears more than once in this team");
-            }
-            ensureLoginIdentityAvailable(teamEmail, registerNumber, null);
-        }
         normalizeRegistrationFieldValues(fields);
         team.setImportedFields(fields);
         for (int i = 0; i < participants.size(); i++) {
@@ -858,7 +849,6 @@ public class HackathonController {
                 }
             }
             List<Team> imported = new ArrayList<>();
-            Map<LoginIdentity, Integer> importedLoginRows = new HashMap<>();
             Map<String, Integer> importedTeamEmails = new HashMap<>();
             Map<String, Integer> importedTeamContacts = new HashMap<>();
             List<Team> existingTeams = teams.findAll();
@@ -933,26 +923,6 @@ public class HackathonController {
                                         + " on CSV row " + rowNumber);
                     }
                     participants.add(new ImportedParticipant(register, name));
-                }
-                Set<String> rowRegisters = new HashSet<>();
-                for (ImportedParticipant participant : participants) {
-                    String register = normalizeRegisterNumber(participant.registerNumber());
-                    if (!rowRegisters.add(register)) {
-                        throw new ResponseStatusException(HttpStatus.CONFLICT,
-                                "Register number " + register + " appears more than once within the team on CSV row "
-                                        + rowNumber + ". Each participant in a team must have a unique register number. "
-                                        + "Check that spreadsheet formatting has not converted register numbers to "
-                                        + "scientific notation, and correct any repeated values before importing.");
-                    }
-                    LoginIdentity identity = new LoginIdentity(teamEmail, register);
-                    Integer previousRow = importedLoginRows.putIfAbsent(identity, rowNumber);
-                    if (previousRow != null) {
-                        throw new ResponseStatusException(HttpStatus.CONFLICT,
-                                "The team email and register number combination appears more than once in the upload "
-                                        + "(CSV rows " + previousRow + " and " + rowNumber + "). "
-                                        + "Each participant login combination must identify one person.");
-                    }
-                    ensureLoginIdentityAvailable(teamEmail, register, null, rowNumber);
                 }
                 Team team = new Team();
                 team.setTeamNumber(nextTeamNumber());
@@ -1065,7 +1035,6 @@ public class HackathonController {
         ensureTeamContactNumberAvailable(importedFieldValue(fields, 10), team.getId(), null);
         ensureTeamEmailAvailable(teamEmail, team.getId(), null);
 
-        Set<String> registerNumbers = new HashSet<>();
         for (int slot = 0; slot < 4; slot++) {
             int nameIndex = slot == 0 ? 2 : 4 + (slot - 1) * 2;
             int registerIndex = nameIndex + 1;
@@ -1080,17 +1049,6 @@ public class HackathonController {
             if (name.isBlank() || name.equalsIgnoreCase(register)) {
                 throw new ResponseStatusException(HttpStatus.BAD_REQUEST,
                         "Participant names must be actual names and register numbers must be present");
-            }
-            if (!registerNumbers.add(register)) {
-                throw new ResponseStatusException(HttpStatus.CONFLICT,
-                        "Register number " + register + " appears more than once in this team");
-            }
-            boolean assignedElsewhere = students.findByLoginUsernameAndRegisterNumber(teamEmail, register).stream()
-                    .anyMatch(existing -> existing.getTeam() == null
-                            || !Objects.equals(existing.getTeam().getId(), team.getId()));
-            if (assignedElsewhere) {
-                throw new ResponseStatusException(HttpStatus.CONFLICT,
-                        "The team email and register number combination is already assigned to another team");
             }
         }
     }
@@ -1247,7 +1205,6 @@ public class HackathonController {
             throw new ResponseStatusException(HttpStatus.CONFLICT,
                     "Set the team's primary email before adding participants so they can sign in");
         }
-        ensureLoginIdentityAvailable(team.getParticipantLoginIdentifier(), student.getRegisterNumber(), null);
         List<ImportedTeamField> fields = team.getImportedFields();
         int availableNameIndex = -1;
         for (int nameIndex : new int[]{4, 6, 8}) {
@@ -1278,10 +1235,6 @@ public class HackathonController {
         String previousRegister = normalizeRegisterNumber(student.getRegisterNumber());
         Student candidate = new Student();
         applyStudent(candidate, request);
-        if (student.getTeam() != null) {
-            ensureLoginIdentityAvailable(student.getTeam().getParticipantLoginIdentifier(),
-                    candidate.getRegisterNumber(), student.getId());
-        }
         String candidateEmail = candidate.getEmail();
         if (student.getTeam() != null && student.isLeader()) {
             if (candidateEmail == null || candidateEmail.isBlank()) {
@@ -1518,25 +1471,6 @@ public class HackathonController {
         student.setEmail(request.email() == null || request.email().isBlank() ? null : request.email().trim());
     }
 
-    private void ensureLoginIdentityAvailable(String username, String registerNumber, Long exceptStudentId) {
-        ensureLoginIdentityAvailable(username, registerNumber, exceptStudentId, null);
-    }
-
-    private void ensureLoginIdentityAvailable(String username, String registerNumber, Long exceptStudentId,
-                                              Integer csvRow) {
-        String normalizedUsername = normalizeTeamUsername(username);
-        String normalizedRegister = normalizeRegisterNumber(registerNumber);
-        students.findByLoginUsernameAndRegisterNumber(normalizedUsername, normalizedRegister).stream()
-                .filter(existing -> !Objects.equals(existing.getId(), exceptStudentId))
-                .findFirst()
-                .ifPresent(existing -> {
-                    String rowMessage = csvRow == null ? "" : " on CSV row " + csvRow;
-                    throw new ResponseStatusException(HttpStatus.CONFLICT,
-                            "The team email and register number combination is already assigned"
-                                            + rowMessage + ". Use the matching team email or correct the duplicate.");
-                });
-    }
-
     private boolean isValidEmail(String email) {
         return email != null && email.trim().length() <= 320
                 && email.trim().matches("^[^\\s@]+@[^\\s@]+\\.[^\\s@]+$");
@@ -1624,7 +1558,6 @@ public class HackathonController {
     public record RoundTwoSettingsRequest(boolean enabled, String deadline) {}
     public record QualificationRequest(String status) {}
     private record ImportedParticipant(String registerNumber, String name) {}
-    private record LoginIdentity(String username, String registerNumber) {}
 
     private void saveSetting(String key, String value) {
         settings.save(new AppSetting(key, value));

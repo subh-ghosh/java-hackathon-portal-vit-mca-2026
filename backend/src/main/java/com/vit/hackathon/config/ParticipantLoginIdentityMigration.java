@@ -30,7 +30,7 @@ public class ParticipantLoginIdentityMigration implements ApplicationRunner {
                 (ConnectionCallback<String>) connection -> connection.getMetaData().getDatabaseProductName())
                 .toLowerCase(Locale.ROOT);
         if (database.contains("postgresql")) {
-            removeGlobalRegisterNumberConstraint();
+            removeRegisterNumberConstraints();
         }
 
         List<Student> participants = students.findAll();
@@ -44,21 +44,44 @@ public class ParticipantLoginIdentityMigration implements ApplicationRunner {
         students.saveAll(participants);
     }
 
-    private void removeGlobalRegisterNumberConstraint() {
+    private void removeRegisterNumberConstraints() {
         List<String> constraints = jdbcTemplate.queryForList("""
                 SELECT constraint_row.conname
                 FROM pg_constraint constraint_row
                 JOIN pg_class table_row ON table_row.oid = constraint_row.conrelid
                 WHERE table_row.relname = 'students'
                   AND constraint_row.contype = 'u'
-                  AND array_length(constraint_row.conkey, 1) = 1
-                  AND EXISTS (
-                      SELECT 1
-                      FROM unnest(constraint_row.conkey) AS column_key(attnum)
-                      JOIN pg_attribute column_row
-                        ON column_row.attrelid = table_row.oid
-                       AND column_row.attnum = column_key.attnum
-                      WHERE column_row.attname = 'register_number'
+                  AND (
+                  (
+                    array_length(constraint_row.conkey, 1) = 1
+                    AND EXISTS (
+                        SELECT 1
+                        FROM unnest(constraint_row.conkey) AS column_key(attnum)
+                        JOIN pg_attribute column_row
+                          ON column_row.attrelid = table_row.oid
+                         AND column_row.attnum = column_key.attnum
+                        WHERE column_row.attname = 'register_number'
+                    )
+                  )
+                  OR (
+                    array_length(constraint_row.conkey, 1) = 2
+                    AND EXISTS (
+                        SELECT 1
+                        FROM unnest(constraint_row.conkey) AS column_key(attnum)
+                        JOIN pg_attribute column_row
+                          ON column_row.attrelid = table_row.oid
+                         AND column_row.attnum = column_key.attnum
+                        WHERE column_row.attname = 'register_number'
+                    )
+                    AND EXISTS (
+                        SELECT 1
+                        FROM unnest(constraint_row.conkey) AS column_key(attnum)
+                        JOIN pg_attribute column_row
+                          ON column_row.attrelid = table_row.oid
+                         AND column_row.attnum = column_key.attnum
+                        WHERE column_row.attname = 'login_username'
+                    )
+                  )
                   )
                 """, String.class);
         for (String constraint : constraints) {

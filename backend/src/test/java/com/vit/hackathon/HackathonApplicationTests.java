@@ -1353,22 +1353,26 @@ class HackathonApplicationTests {
     }
 
     @Test
-    void teamImportRejectsRepeatedRegistersInsideOneTeamAndIncompleteMemberPairs() throws Exception {
-        List<String> repeatedWithinTeam = teamRow("LEADER", "26MCA9401", "same-user@example.test");
-        repeatedWithinTeam.set(4, "MEMBER");
-        repeatedWithinTeam.set(5, "26mca9401");
+    void teamImportAllowsRepeatedRegistersButRejectsIncompleteMemberPairs() throws Exception {
+        List<String> repeatedWithinTeam = teamRow("LEADER", "2503730000000000", "same-user@example.test");
+        repeatedWithinTeam.set(4, "JANANI P");
+        repeatedWithinTeam.set(5, "2.50E+15");
+        repeatedWithinTeam.set(6, "INDHUJA V");
+        repeatedWithinTeam.set(7, "2503730424322050X");
+        repeatedWithinTeam.set(8, "DIWAN P");
+        repeatedWithinTeam.set(9, "2.50E+15");
         mockMvc.perform(multipart("/api/admin/teams/import")
                         .file(csvUpload(TeamRegistrationFields.LABELS, repeatedWithinTeam))
                         .header("X-Admin-Password", ADMIN_PASSWORD))
-                .andExpect(status().isConflict())
-                .andExpect(jsonPath("$.message").value(org.hamcrest.Matchers.allOf(
-                        org.hamcrest.Matchers.containsString(
-                                "Register number 26MCA9401 appears more than once within the team on CSV row 2"),
-                        org.hamcrest.Matchers.containsString(
-                                "spreadsheet formatting has not converted register numbers to scientific notation"))));
-        org.junit.jupiter.api.Assertions.assertEquals(0, teams.count());
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$[0].students.length()").value(4))
+                .andExpect(jsonPath("$[0].students[1].registerNumber").value("2.50E+15"))
+                .andExpect(jsonPath("$[0].students[3].registerNumber").value("2.50E+15"));
+        org.junit.jupiter.api.Assertions.assertEquals(1, teams.count());
+        org.junit.jupiter.api.Assertions.assertEquals(4, students.count());
 
-        List<String> missingRegister = teamRow("LEADER", "26MCA9402", "same-user@example.test");
+        List<String> missingRegister = teamRow("LEADER", "26MCA9402", "another-user@example.test");
+        missingRegister.set(10, "9876543211");
         missingRegister.set(4, "MEMBER WITHOUT REGISTER");
         mockMvc.perform(multipart("/api/admin/teams/import")
                         .file(csvUpload(TeamRegistrationFields.LABELS, missingRegister))
@@ -1376,8 +1380,8 @@ class HackathonApplicationTests {
                 .andExpect(status().isBadRequest())
                 .andExpect(jsonPath("$.message").value(org.hamcrest.Matchers.containsString(
                         "enter both the name and register number or leave both blank")));
-        org.junit.jupiter.api.Assertions.assertEquals(0, teams.count());
-        org.junit.jupiter.api.Assertions.assertEquals(0, students.count());
+        org.junit.jupiter.api.Assertions.assertEquals(1, teams.count());
+        org.junit.jupiter.api.Assertions.assertEquals(4, students.count());
     }
 
     @Test
