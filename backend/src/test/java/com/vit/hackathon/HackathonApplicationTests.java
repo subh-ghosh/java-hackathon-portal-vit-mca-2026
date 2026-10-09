@@ -186,6 +186,15 @@ class HackathonApplicationTests {
         mockMvc.perform(post("/api/student/login")
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("{\"email\":\"leader@example.test\",\"contactNumber\":\"+91 98765 43210\"}"))
+                .andExpect(status().isForbidden())
+                .andExpect(jsonPath("$.message").value(
+                        org.hamcrest.Matchers.containsString("No team members are checked in")));
+        Student checkedInLeader = createdTeam.getStudents().get(0);
+        checkedInLeader.setPresent(true);
+        students.saveAndFlush(checkedInLeader);
+        mockMvc.perform(post("/api/student/login")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"email\":\"leader@example.test\",\"contactNumber\":\"+91 98765 43210\"}"))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.importedFields.length()").value(19))
                 .andExpect(jsonPath("$.importedFields[1].fieldValue").value("team-login"))
@@ -271,6 +280,23 @@ class HackathonApplicationTests {
                         .header("X-Admin-Password", ATTENDANCE_PASSWORD))
                 .andExpect(status().isUnauthorized());
 
+        mockMvc.perform(post("/api/student/login")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(new ObjectMapper().writeValueAsString(Map.of(
+                                "email", team.getPrimaryEmail(),
+                                "contactNumber", team.getPrimaryContactNumber()))))
+                .andExpect(status().isForbidden())
+                .andExpect(jsonPath("$.message").value(
+                        org.hamcrest.Matchers.containsString("No team members are checked in")));
+        mockMvc.perform(put("/api/student/submission")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(new ObjectMapper().writeValueAsString(Map.of(
+                                "email", team.getPrimaryEmail(),
+                                "contactNumber", team.getPrimaryContactNumber(),
+                                "googleDriveLink", "https://drive.google.com/file/d/not-checked-in",
+                                "githubLink", "https://github.com/example/not-checked-in"))))
+                .andExpect(status().isForbidden());
+
         Student presentMember = team.getStudents().get(0);
         mockMvc.perform(put("/api/attendance/students/{studentId}", presentMember.getId())
                         .header("X-Attendance-Password", ATTENDANCE_PASSWORD)
@@ -308,6 +334,12 @@ class HackathonApplicationTests {
                         .content("{\"present\":false}"))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.present").value(false));
+        mockMvc.perform(post("/api/student/login")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(new ObjectMapper().writeValueAsString(Map.of(
+                                "email", team.getPrimaryEmail(),
+                                "contactNumber", team.getPrimaryContactNumber()))))
+                .andExpect(status().isForbidden());
     }
 
     @Test
@@ -340,8 +372,9 @@ class HackathonApplicationTests {
         mockMvc.perform(post("/api/student/login")
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("{\"email\":\"email-login@example.test\",\"contactNumber\":\"9876543210\"}"))
-                .andExpect(status().isOk())
-                .andExpect(jsonPath("$.students.length()").value(0));
+                .andExpect(status().isForbidden())
+                .andExpect(jsonPath("$.message").value(
+                        org.hamcrest.Matchers.containsString("No team members are checked in")));
     }
 
     @Test
@@ -1344,6 +1377,8 @@ class HackathonApplicationTests {
         Team lastTeam = teams.findAll().stream()
                 .max(Comparator.comparing(Team::getTeamNumber))
                 .orElseThrow();
+        lastTeam.getStudents().get(0).setPresent(true);
+        teams.saveAndFlush(lastTeam);
         org.junit.jupiter.api.Assertions.assertEquals(fixtureValuesForIndex(fixtureHeaders, firstTeamValues, 2),
                 firstTeam.getGroupLeaderName());
         org.junit.jupiter.api.Assertions.assertEquals(fixtureValuesForIndex(fixtureHeaders, firstTeamValues, 3),
@@ -1496,6 +1531,8 @@ class HackathonApplicationTests {
         mockMvc.perform(put("/api/admin/students/{studentId}/leader", crudParticipant.getId())
                         .header("X-Admin-Password", ADMIN_PASSWORD))
                 .andExpect(status().isOk());
+        crudParticipant.setPresent(true);
+        students.saveAndFlush(crudParticipant);
         mockMvc.perform(post("/api/student/login")
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("{\"email\":\"crud-team@example.test\",\"contactNumber\":\"9876543210\"}"))

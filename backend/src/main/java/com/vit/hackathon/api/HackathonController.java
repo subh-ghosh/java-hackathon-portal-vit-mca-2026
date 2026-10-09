@@ -1221,7 +1221,12 @@ public class HackathonController {
                     "Invalid team email or primary contact number");
         }
         attemptLimiter.participantSucceeded(identity, normalizedContactNumber);
-        return matches.get(0);
+        Team team = matches.get(0);
+        if (team.getStudents().stream().noneMatch(Student::isPresent)) {
+            throw new ResponseStatusException(HttpStatus.FORBIDDEN,
+                    "No team members are checked in. Ask the Attendance Coordinator to mark at least one member present.");
+        }
+        return team;
     }
 
     private void applyStudent(Student student, StudentRequest request) {
