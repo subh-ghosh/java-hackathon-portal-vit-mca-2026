@@ -464,8 +464,8 @@ function Login({ onLogin, onAdmin }) {
         <section className="event-support" aria-labelledby="event-support-title">
           <div>
             <span className="eyebrow">NEED HELP?</span>
-            <h3 id="event-support-title">Event and technical support</h3>
-            <p>For hackathon, portal or website help, contact:</p>
+            <h3 id="event-support-title">Event support</h3>
+            <p>For questions about the hackathon, contact the coordinators:</p>
           </div>
           <div className="event-support-contacts">
             <article className="event-support-contact">
@@ -478,8 +478,17 @@ function Login({ onLogin, onAdmin }) {
               <a href="tel:+917904440327">+91 79044 40327</a>
               <a href="mailto:vijayarani.a@vit.ac.in">vijayarani.a@vit.ac.in</a>
             </article>
+          </div>
+        </section>
+        <section className="event-support" aria-labelledby="technical-support-title">
+          <div>
+            <span className="eyebrow">WEBSITE HELP?</span>
+            <h3 id="technical-support-title">Technical and website support</h3>
+            <p>For help with the portal or website, contact:</p>
+          </div>
+          <div className="event-support-contacts">
             <article className="event-support-contact">
-              <h4>Technical and website support · Subarta Ghosh</h4>
+              <h4>Subarta Ghosh</h4>
               <a href="tel:+917319591361">+91 73195 91361</a>
               <a href="mailto:subarta.ghosh2025@vitstudent.ac.in">subarta.ghosh2025@vitstudent.ac.in</a>
             </article>
