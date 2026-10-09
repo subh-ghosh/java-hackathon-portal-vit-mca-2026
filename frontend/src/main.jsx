@@ -3,7 +3,8 @@ import { createRoot } from 'react-dom/client';
 import './styles.css';
 
 const API = import.meta.env.VITE_API_URL || 'https://vit-hackathon-api.onrender.com/api';
-const SESSION_TTL = 8 * 60 * 60 * 1000;
+const SESSION_TTL = 7 * 24 * 60 * 60 * 1000;
+const ADMIN_SESSION_KEY = 'hackathon-admin-session';
 const ATTENDANCE_SYNC_INTERVAL_MS = 3000;
 
 function toLocalDateTimeInput(value) {
@@ -209,6 +210,27 @@ function saveSession(key, value) {
 
 function clearSession(key) {
   sessionStorage.removeItem(key);
+}
+
+function readAdminSession() {
+  try {
+    const value = JSON.parse(sessionStorage.getItem(ADMIN_SESSION_KEY) || 'null');
+    if (!value?.password || !value?.expiresAt || value.expiresAt <= Date.now()) {
+      sessionStorage.removeItem(ADMIN_SESSION_KEY);
+      return null;
+    }
+    return value;
+  } catch {
+    sessionStorage.removeItem(ADMIN_SESSION_KEY);
+    return null;
+  }
+}
+
+function saveAdminSession(password) {
+  sessionStorage.setItem(ADMIN_SESSION_KEY, JSON.stringify({
+    password,
+    expiresAt: Date.now() + SESSION_TTL
+  }));
 }
 
 async function request(path, options = {}) {
@@ -768,8 +790,8 @@ function LoadErrorState({ onRetry }) {
 }
 
 function Admin() {
-  const [password, setPassword] = useState('');
-  const [authed, setAuthed] = useState(false);
+  const [password, setPassword] = useState(() => readAdminSession()?.password || '');
+  const [authed, setAuthed] = useState(() => Boolean(readAdminSession()));
   const [teams, setTeams] = useState([]);
   const [problems, setProblems] = useState([]);
   const [updatingProblemVisibility, setUpdatingProblemVisibility] = useState(false);
@@ -858,8 +880,20 @@ function Admin() {
     return () => window.removeEventListener('keydown', closeOnEscape);
   }, [importDialog, actionDialog]);
   useEffect(() => {
-    clearSession('hackathon-admin-session');
+    const savedSession = readAdminSession();
+    if (!savedSession) return;
+    load(savedSession.password).catch(error => {
+      if (error.status === 401 || error.status === 403) {
+        sessionStorage.removeItem(ADMIN_SESSION_KEY);
+        setPassword('');
+        setAuthed(false);
+      }
+      setErrorNotice(error.message);
+    });
   }, []);
+  useEffect(() => {
+    if (!authed) sessionStorage.removeItem(ADMIN_SESSION_KEY);
+  }, [authed]);
   useEffect(() => {
     const showRequestError = event => setErrorNotice(event.detail || 'The request failed.');
     const showUnhandledError = event => {
@@ -898,10 +932,10 @@ function Admin() {
     }, 30000);
     return () => window.clearInterval(timer);
   }, [authed, password]);
-  async function load() {
+  async function load(adminPassword = password) {
     setLoadingData(true);
     setLoadError(false);
-    const authHeaders = headers();
+    const authHeaders = { 'X-Admin-Password': adminPassword };
     try {
       const [loadedTeams, loadedProblems, loadedRoundAccess, loadedSubmissions, loadedRoundTwoSubmissions] = await Promise.all([
         request('/admin/teams', { headers: authHeaders }),
@@ -912,7 +946,9 @@ function Admin() {
       ]);
       setTeams(loadedTeams); setProblems(loadedProblems); setLoginSettings(toLocalLoginSettings(loadedRoundAccess));
       setSubmissions(loadedSubmissions); setRoundTwoSettings(toLocalRoundTwoSettings(loadedRoundAccess));
-      setRoundTwoSubmissions(loadedRoundTwoSubmissions); setAuthed(true);
+      setRoundTwoSubmissions(loadedRoundTwoSubmissions);
+      saveAdminSession(adminPassword);
+      setAuthed(true);
     } catch (error) {
       setLoadError(true);
       throw error;
@@ -1571,9 +1607,9 @@ function App() {
     setSession(updatedSession);
     return team;
   };
-  const openAdmin = () => { logout(); setMode('admin'); };
+  const openAdmin = () => { logout(); location.hash = 'admin'; setMode('admin'); };
   const openAttendance = () => { logout(); setMode('attendance'); };
-  const openParticipant = () => { logout(); setMode('student'); };
+  const openParticipant = () => { logout(); location.hash = ''; setMode('student'); };
   return <>{mode === 'admin' ? <Admin /> : mode === 'attendance' ? <AttendanceCoordinator onExit={openParticipant} /> : session ? <Student team={session.team} credentials={session.credentials} logout={logout} refreshSession={refreshParticipantSession} sessionSyncError={sessionSyncError} /> : <Login onLogin={onLogin} onAdmin={openAdmin} />}{mode === 'student' && sessionExpired && <div className="session-expired"><div className="card"><h2>Participant access updated</h2><p>{sessionExpiredMessage}</p><button onClick={logout}>Back to login</button></div></div>}{(mode === 'admin' || mode === 'attendance' || session) && <div className="portal-mode-switches">{mode === 'admin' && <button className="mode-switch" onClick={openAttendance}>Attendance Coordinator</button>}<button className="mode-switch" onClick={openParticipant}>Participant login</button></div>}</>;
 }
 
