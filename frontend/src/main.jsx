@@ -145,7 +145,7 @@ async function request(path, options = {}) {
   return body;
 }
 
-function Login({ onLogin, onAdmin, onAttendance }) {
+function Login({ onLogin, onAdmin }) {
   const [form, setForm] = useState({ email: '', contactNumber: '' });
   const [error, setError] = useState('');
   const [submitting, setSubmitting] = useState(false);
@@ -196,7 +196,6 @@ function Login({ onLogin, onAdmin, onAttendance }) {
         <label>Team’s primary contact number<input required type="tel" value={form.contactNumber} onChange={e => setForm({ ...form, contactNumber: e.target.value })} placeholder="Contact number from your team registration" autoComplete="tel" /></label>
         {error && <div className="error" role="alert">{error}</div>}
         <button disabled={submitting}>{submitting ? 'Signing in…' : 'Enter team workspace'} <span>→</span></button>
-        <button type="button" className="attendance-entry-button" onClick={onAttendance}>Attendance Coordinator</button>
         <div className="login-footnote"><b>Read the event guidelines before participating</b><span>Schedule · technology policy · conduct · awards · travel and accommodation</span></div>
       </form>
       <section className="event-details">
@@ -1205,7 +1204,7 @@ function App() {
   const openAdmin = () => { logout(); setMode('admin'); };
   const openAttendance = () => { logout(); setMode('attendance'); };
   const openParticipant = () => { logout(); setMode('student'); };
-  return <>{mode === 'admin' ? <Admin /> : mode === 'attendance' ? <AttendanceCoordinator onExit={openParticipant} /> : session ? <Student team={session.team} credentials={session.credentials} logout={logout} refreshSession={refreshParticipantSession} /> : <Login onLogin={onLogin} onAdmin={openAdmin} onAttendance={openAttendance} />}{mode === 'student' && sessionExpired && <div className="session-expired"><div className="card"><h2>Participant session expired</h2><p>Your session has expired for security. Please sign in again.</p><button onClick={logout}>Sign out</button></div></div>}{(mode === 'admin' || mode === 'attendance' || session) && <button className="mode-switch" onClick={openParticipant}>Participant login</button>}</>;
+  return <>{mode === 'admin' ? <Admin /> : mode === 'attendance' ? <AttendanceCoordinator onExit={openParticipant} /> : session ? <Student team={session.team} credentials={session.credentials} logout={logout} refreshSession={refreshParticipantSession} /> : <Login onLogin={onLogin} onAdmin={openAdmin} />}{mode === 'student' && sessionExpired && <div className="session-expired"><div className="card"><h2>Participant session expired</h2><p>Your session has expired for security. Please sign in again.</p><button onClick={logout}>Sign out</button></div></div>}{(mode === 'admin' || mode === 'attendance' || session) && <div className="portal-mode-switches">{mode === 'admin' && <button className="mode-switch" onClick={openAttendance}>Attendance Coordinator</button>}<button className="mode-switch" onClick={openParticipant}>Participant login</button></div>}</>;
 }
 
 createRoot(document.getElementById('root')).render(<App />);
