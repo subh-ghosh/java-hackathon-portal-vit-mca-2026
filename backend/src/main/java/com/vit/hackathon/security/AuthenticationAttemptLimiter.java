@@ -46,6 +46,18 @@ public class AuthenticationAttemptLimiter {
         attempts.remove(key("admin", clientIdentity));
     }
 
+    public synchronized void checkAttendance(String clientIdentity) {
+        check(key("attendance", clientIdentity), MAX_ADMIN_FAILURES);
+    }
+
+    public synchronized void attendanceFailed(String clientIdentity) {
+        failed(key("attendance", clientIdentity), MAX_ADMIN_FAILURES);
+    }
+
+    public synchronized void attendanceSucceeded(String clientIdentity) {
+        attempts.remove(key("attendance", clientIdentity));
+    }
+
     private void check(String key, int limit) {
         AttemptWindow window = currentWindow(key);
         if (window != null && window.failures() >= limit) {

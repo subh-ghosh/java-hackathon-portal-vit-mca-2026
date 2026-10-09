@@ -67,6 +67,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 @AutoConfigureMockMvc
 class HackathonApplicationTests {
     private static final String ADMIN_PASSWORD = "test-admin-password";
+    private static final String ATTENDANCE_PASSWORD = "separate-attendance-password";
     private static final String ADMIN_PASSWORD_HASH = new BCryptPasswordEncoder().encode(ADMIN_PASSWORD);
 
     @DynamicPropertySource
@@ -228,6 +229,88 @@ class HackathonApplicationTests {
     }
 
     @Test
+    void attendanceCoordinatorCanOnlyUpdateAttendanceAndParticipantsSeePresentMembers() throws Exception {
+        Team team = createTeam("ATTENDANCE LEADER", "26MCA9901", "attendance-team");
+        Student additional = new Student();
+        additional.setName("ATTENDANCE MEMBER");
+        additional.setRegisterNumber("26MCA9902");
+        additional.setTeam(team);
+        team.getStudents().add(additional);
+        teams.save(team);
+
+        mockMvc.perform(post("/api/attendance/login")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"password\":\"not-configured-yet\"}"))
+                .andExpect(status().isForbidden());
+
+        mockMvc.perform(put("/api/admin/settings")
+                        .header("X-Admin-Password", ADMIN_PASSWORD)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"loginEnabled\":true,\"startTime\":\"\",\"endTime\":\"\","
+                                + "\"attendancePassword\":\"" + ATTENDANCE_PASSWORD + "\"}"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.attendancePasswordConfigured").value(true));
+        String savedPassword = settings.findById("attendance-password").orElseThrow().getValue();
+        org.junit.jupiter.api.Assertions.assertNotEquals(ATTENDANCE_PASSWORD, savedPassword);
+        org.junit.jupiter.api.Assertions.assertTrue(new BCryptPasswordEncoder().matches(ATTENDANCE_PASSWORD, savedPassword));
+
+        mockMvc.perform(get("/api/attendance/teams")
+                        .header("X-Attendance-Password", "incorrect-password"))
+                .andExpect(status().isUnauthorized());
+        mockMvc.perform(post("/api/attendance/login")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"password\":\"" + ATTENDANCE_PASSWORD + "\"}"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$[0].students.length()").value(2))
+                .andExpect(jsonPath("$[0].students[0].present").value(false))
+                .andExpect(jsonPath("$[0].students[1].present").value(false))
+                .andExpect(jsonPath("$[0].students[0].email").doesNotExist())
+                .andExpect(jsonPath("$[0].importedFields").doesNotExist());
+
+        mockMvc.perform(get("/api/admin/teams")
+                        .header("X-Admin-Password", ATTENDANCE_PASSWORD))
+                .andExpect(status().isUnauthorized());
+
+        Student presentMember = team.getStudents().get(0);
+        mockMvc.perform(put("/api/attendance/students/{studentId}", presentMember.getId())
+                        .header("X-Attendance-Password", ATTENDANCE_PASSWORD)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{}"))
+                .andExpect(status().isBadRequest());
+
+        mockMvc.perform(put("/api/attendance/students/{studentId}", presentMember.getId())
+                        .header("X-Attendance-Password", ATTENDANCE_PASSWORD)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"present\":true}"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.present").value(true));
+
+        mockMvc.perform(post("/api/student/login")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(new ObjectMapper().writeValueAsString(Map.of(
+                                "email", team.getPrimaryEmail(),
+                                "contactNumber", team.getPrimaryContactNumber()))))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.students.length()").value(1))
+                .andExpect(jsonPath("$.students[0].registerNumber").value("26MCA9901"))
+                .andExpect(jsonPath("$.students[0].present").value(true));
+
+        mockMvc.perform(get("/api/admin/teams")
+                        .header("X-Admin-Password", ADMIN_PASSWORD))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$[0].students.length()").value(2))
+                .andExpect(jsonPath("$[0].students[0].present").value(true))
+                .andExpect(jsonPath("$[0].students[1].present").value(false));
+
+        mockMvc.perform(put("/api/attendance/students/{studentId}", presentMember.getId())
+                        .header("X-Attendance-Password", ATTENDANCE_PASSWORD)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"present\":false}"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.present").value(false));
+    }
+
+    @Test
     void teamImportDoesNotRequireUsernameColumn() throws Exception {
         List<String> headers = List.of(
                 TeamRegistrationFields.LABELS.get(2),
@@ -258,7 +341,7 @@ class HackathonApplicationTests {
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("{\"email\":\"email-login@example.test\",\"contactNumber\":\"9876543210\"}"))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$.students[0].registerNumber").value("26MCA9011"));
+                .andExpect(jsonPath("$.students.length()").value(0));
     }
 
     @Test
@@ -1026,10 +1109,16 @@ class HackathonApplicationTests {
         Student leader = students.findById(leaderId).orElseThrow();
         leader.setName("22BCE0001");
         students.saveAndFlush(leader);
+        List<Student> checkedInMembers = students.findAll();
+        checkedInMembers.forEach(member -> member.setPresent(true));
+        students.saveAllAndFlush(checkedInMembers);
+        org.junit.jupiter.api.Assertions.assertEquals(4, checkedInMembers.size());
+        org.junit.jupiter.api.Assertions.assertTrue(checkedInMembers.stream().allMatch(Student::isPresent));
         mockMvc.perform(post("/api/student/login")
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("{\"email\":\"leader@example.com\",\"contactNumber\":\"9876543210\"}"))
                 .andExpect(status().isOk());
+        leader = students.findById(leaderId).orElseThrow();
         leader.setName("TEST LEADER");
         students.saveAndFlush(leader);
 

@@ -9,7 +9,8 @@ Full-stack hackathon management portal built with Spring Boot, React, and Postgr
 - Shared team login with the team's primary email and primary contact number
 - Shared view of every non-empty team registration field for all authenticated team members
 - Shared problem statement for every member of a team
-- Read-only student view of team members and assigned problem
+- Attendance Coordinator check-in with per-participant present/absent status
+- Participant view limited to team members marked present; admin roster retains all members and their attendance status
 - Admin-only team, student, problem, and assignment management
 - Admin submission review and Excel export, with double confirmation for bulk clears
 
@@ -35,6 +36,7 @@ cd backend
 Set `DATABASE_URL`, `DATABASE_USERNAME`, and `DATABASE_PASSWORD` for Neon or a local PostgreSQL database.
 Set `ADMIN_PASSWORD` to a strong, private coordinator password. These values are required environment variables and are intentionally not stored in Git.
 `ADMIN_PASSWORD` must be a BCrypt hash in production.
+An admin can set a separate attendance coordinator password in the login settings. Attendance coordinators can only view the check-in roster and mark individual participants present or absent; attendance passwords are stored as BCrypt hashes.
 Configure `CORS_ALLOWED_ORIGIN_PATTERNS` as a comma-separated list of trusted frontend origins in production. The default permits localhost and the portal's Cloudflare Pages domains. Authentication throttling is held in the backend process's memory, so it resets on restart and is not shared across multiple instances. Admin throttling uses the socket peer address and deliberately does not trust client-supplied forwarding headers; if the hosting proxy masks client addresses, add a trusted edge/API rate limit before public launch or scaling out.
 
 ### Frontend

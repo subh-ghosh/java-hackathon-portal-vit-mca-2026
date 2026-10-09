@@ -20,12 +20,13 @@ function toLocalLoginSettings(settings) {
   };
 }
 
-function toServerLoginSettings(settings) {
+function toServerLoginSettings(settings, attendancePassword) {
   const toIsoString = value => value ? new Date(value).toISOString() : '';
   return {
     loginEnabled: settings.loginEnabled,
     startTime: toIsoString(settings.startTime),
-    endTime: toIsoString(settings.endTime)
+    endTime: toIsoString(settings.endTime),
+    attendancePassword
   };
 }
 
@@ -40,7 +41,7 @@ function isLoginScheduleActive(settings, now) {
   return (start === null || now >= start) && (end === null || now <= end);
 }
 
-function LoginWindowForm({ settings, onSettingsChange, onSubmit, onTogglePause, pauseUpdating }) {
+function LoginWindowForm({ settings, onSettingsChange, onSubmit, onTogglePause, pauseUpdating, attendancePassword, onAttendancePasswordChange }) {
   const [now, setNow] = useState(Date.now());
   const scheduled = hasLoginSchedule(settings);
 
@@ -77,6 +78,12 @@ function LoginWindowForm({ settings, onSettingsChange, onSubmit, onTogglePause, 
         <label>Start time (optional)<input type="datetime-local" value={toLocalDateTimeInput(settings.startTime)} onChange={event => onSettingsChange({ ...settings, startTime: event.target.value })} /></label>
         <label>End time (optional)<input type="datetime-local" value={toLocalDateTimeInput(settings.endTime)} onChange={event => onSettingsChange({ ...settings, endTime: event.target.value })} /></label>
       </div>
+      <label className="attendance-password-field">Attendance coordinator password
+        <input type="password" minLength="8" maxLength="72" autoComplete="new-password" value={attendancePassword} onChange={event => onAttendancePasswordChange(event.target.value)} placeholder={settings.attendancePasswordConfigured ? 'Leave blank to keep the current password' : 'Set a separate password (8-72 characters)'} />
+      </label>
+      <p className="login-window-note">{settings.attendancePasswordConfigured
+        ? 'Attendance coordinators use this shared password to access check-in only. Enter a new password above to change it.'
+        : 'Set a separate password to enable attendance coordinator sign-in.'}</p>
       <p className="login-window-note" role="status">
         {settings.accessPaused
           ? 'Participant access is paused immediately. Resume to return to the saved schedule or manual setting.'
@@ -138,7 +145,7 @@ async function request(path, options = {}) {
   return body;
 }
 
-function Login({ onLogin, onAdmin }) {
+function Login({ onLogin, onAdmin, onAttendance }) {
   const [form, setForm] = useState({ email: '', contactNumber: '' });
   const [error, setError] = useState('');
   const [submitting, setSubmitting] = useState(false);
@@ -189,6 +196,7 @@ function Login({ onLogin, onAdmin }) {
         <label>Team’s primary contact number<input required type="tel" value={form.contactNumber} onChange={e => setForm({ ...form, contactNumber: e.target.value })} placeholder="Contact number from your team registration" autoComplete="tel" /></label>
         {error && <div className="error" role="alert">{error}</div>}
         <button disabled={submitting}>{submitting ? 'Signing in…' : 'Enter team workspace'} <span>→</span></button>
+        <button type="button" className="attendance-entry-button" onClick={onAttendance}>Attendance Coordinator</button>
         <div className="login-footnote"><b>Read the event guidelines before participating</b><span>Schedule · technology policy · conduct · awards · travel and accommodation</span></div>
       </form>
       <section className="event-details">
@@ -441,10 +449,10 @@ function Student({ team, credentials, logout, refreshSession }) {
     try {
       const refreshedTeam = await refreshSession();
       if (refreshedTeam.problem) {
-        setChallengeNotice('Your assigned challenge has been refreshed.');
+        setChallengeNotice('Your present-member roster and assigned challenge have been refreshed.');
         setChallengeNoticeType('success');
       } else {
-        setChallengeNotice('No published challenge is available. Ask the coordinator to confirm the assignment and enable the problem.');
+        setChallengeNotice('Your present-member roster has been refreshed. No published challenge is available yet.');
         setChallengeNoticeType('error');
       }
     } catch (error) {
@@ -481,7 +489,7 @@ function Student({ team, credentials, logout, refreshSession }) {
         <div className="welcome">
           <span className="eyebrow">GREENOPS · TEAM SPACE</span>
           <h1>{team.name}</h1>
-          <p className="muted">Your assigned problem, team roster and final project submission.</p>
+          <p className="muted">Your assigned problem, checked-in team members and final project submission.</p>
         </div>
         <div className="student-event-banner">
           <span><b>OCTOBER 10 &amp; 11, 2026</b><small>Hackathon dates</small></span>
@@ -498,12 +506,15 @@ function Student({ team, credentials, logout, refreshSession }) {
               <dt>{field.fieldName}</dt><dd>{field.fieldValue}</dd>
             </div>)}</dl>
             : <div className="empty">No registration details are available for this team.</div>}
-          <h3 className="team-members-heading">Group members</h3>
-          <div className="members">{team.students.map(s => <div className="member" key={s.registerNumber}><span>{(s.name || s.registerNumber).charAt(0)}</span><div><b>{s.name || 'Name not provided'}</b><small>{s.registerNumber}{s.leader ? ' - Group leader' : ''}</small></div></div>)}</div>
+          <h3 className="team-members-heading">Present team members</h3>
+          <p className="muted attendance-roster-note">Only members marked present by an Attendance Coordinator appear here. Refresh the roster and challenge after check-in.</p>
+          {team.students.length
+            ? <div className="members">{team.students.map(s => <div className="member" key={s.registerNumber}><span>{(s.name || s.registerNumber).charAt(0)}</span><div><b>{s.name || 'Name not provided'}</b><small>{s.registerNumber}{s.leader ? ' - Group leader' : ''}</small></div></div>)}</div>
+            : <div className="empty">No team members have been marked present yet.</div>}
         </section>
         <div className="student-grid">
           <section className="card problem-card">
-            <div className="card-top"><span className="eyebrow">YOUR GREENOPS CHALLENGE {team.problem ? `· #${team.problem.id}` : ''}</span><div className="problem-card-actions"><button type="button" className="small-button" onClick={refreshChallenge} disabled={refreshingChallenge}>{refreshingChallenge ? 'Refreshing…' : 'Refresh challenge'}</button><span className="pill">{team.problem ? 'Ready' : 'Not published'}</span></div></div>
+            <div className="card-top"><span className="eyebrow">YOUR GREENOPS CHALLENGE {team.problem ? `· #${team.problem.id}` : ''}</span><div className="problem-card-actions"><button type="button" className="small-button" onClick={refreshChallenge} disabled={refreshingChallenge}>{refreshingChallenge ? 'Refreshing…' : 'Refresh team view'}</button><span className="pill">{team.problem ? 'Ready' : 'Not published'}</span></div></div>
             {team.problem ? <><h2>{team.problem.title}</h2><ProblemStatement statement={team.problem.statement} /></> : <div className="empty">No published challenge is available. If the coordinator just assigned one, refresh here; the problem must also be enabled before participants can view it.</div>}
             {challengeNotice && <div className={challengeNoticeType} role={challengeNoticeType === 'error' ? 'alert' : 'status'}>{challengeNotice}</div>}
           </section>
@@ -623,7 +634,8 @@ function Admin() {
   const [dialog, setDialog] = useState(null);
   const [notice, setNoticeState] = useState('');
   const [noticeType, setNoticeType] = useState('success');
-  const [loginSettings, setLoginSettings] = useState({ loginEnabled: true, startTime: '', endTime: '' });
+  const [loginSettings, setLoginSettings] = useState({ loginEnabled: true, startTime: '', endTime: '', attendancePasswordConfigured: false });
+  const [attendancePassword, setAttendancePassword] = useState('');
   const [pauseUpdating, setPauseUpdating] = useState(false);
   const [submissions, setSubmissions] = useState([]);
   const [downloadingSubmissions, setDownloadingSubmissions] = useState(false);
@@ -704,8 +716,10 @@ function Admin() {
   }
   async function saveLoginSettings(event) {
     event.preventDefault();
-    const saved = await request('/admin/settings', { method: 'PUT', headers: headers(), body: JSON.stringify(toServerLoginSettings(loginSettings)) });
-    setLoginSettings(toLocalLoginSettings(saved)); setNotice('Participant login settings updated.');
+    const saved = await request('/admin/settings', { method: 'PUT', headers: headers(), body: JSON.stringify(toServerLoginSettings(loginSettings, attendancePassword)) });
+    setLoginSettings(toLocalLoginSettings(saved));
+    setAttendancePassword('');
+    setNotice('Login and attendance access settings updated.');
   }
   async function toggleParticipantAccessPause() {
     setPauseUpdating(true);
@@ -1059,7 +1073,116 @@ function Admin() {
     setNoticeType('success');
   }
   if (!authed) return <main className="login-shell admin-login"><form className="card login-card" onSubmit={e => { e.preventDefault(); load().catch(err => setErrorNotice(err.message)); }}><span className="eyebrow">GREENOPS · COORDINATOR PORTAL</span><h2>Admin access.</h2><p className="muted">Manage GreenOps teams, participants, submissions and problem statements.</p><label>Admin password<input type="password" required value={password} onChange={e => setPassword(e.target.value)} /></label>{notice && <div className="error">{notice}</div>}<button disabled={loadingData}>{loadingData ? 'Connecting…' : 'Open dashboard'} <span>&gt;</span></button></form></main>;
-  return <main className="app-shell">  <header><div className="brand"><img src="/vit-logo-transparent.png" alt="Vellore Institute of Technology" /><span>GREENOPS</span></div><div className="header-actions"><button className="ghost" onClick={() => setAuthed(false)}>Sign out</button></div></header>  <div className="content admin-content"><div className="welcome"><span className="eyebrow">GREENOPS · COORDINATOR PORTAL</span><h1>Command center</h1><p className="muted">Manage GreenOps participants, problem statements and team submissions.</p></div>{notice && <div className={noticeType} role={noticeType === 'error' ? 'alert' : 'status'}>{notice}</div>}<LoginWindowForm settings={loginSettings} onSettingsChange={setLoginSettings} onSubmit={saveLoginSettings} onTogglePause={toggleParticipantAccessPause} pauseUpdating={pauseUpdating} /><section className="card table-card"><div className="card-top"><div><span className="eyebrow">SUBMISSIONS</span><h2>Team submissions</h2></div><div className="problem-library-actions"><span className="pill">{loadingData ? 'Loading…' : submissions.length + ' submitted'}</span><button type="button" className="small-button" onClick={downloadSubmissions} disabled={downloadingSubmissions}>{downloadingSubmissions ? 'Downloading...' : 'Download Excel'}</button><button type="button" className="small-button danger-button" onClick={clearSubmissions} disabled={loadingData}>Clear all</button></div></div>{loadingData ? <LoadingState label="Loading team submissions…" /> : loadError ? <LoadErrorState onRetry={() => load().catch(error => setErrorNotice(error.message))} /> : submissions.length === 0 ? <div className="empty">No team submissions yet.</div> : <div className="table-wrap"><table><thead><tr><th>Group</th><th>Google Drive</th><th>GitHub</th><th>Updated</th></tr></thead><tbody>{submissions.map(item => <tr key={item.id}><td><b>{item.team?.name || `#${item.team?.teamNumber || ''}`}</b></td><td><a href={item.googleDriveLink} target="_blank" rel="noreferrer">Open document</a></td><td><a href={item.githubLink} target="_blank" rel="noreferrer">Open repository</a></td><td>{item.updatedAt ? new Date(item.updatedAt).toLocaleString() : '-'}</td></tr>)}</tbody></table></div>}</section><section className="card table-card"><div className="card-top library-card-top"><div><span className="eyebrow">PROBLEM LIBRARY</span><h2>Problem statements</h2></div>  <div className="problem-library-actions"><span className="pill">{loadingData ? 'Loading…' : problems.length + ' questions'}</span><button type="button" className="small-button bulk-problem-toggle" disabled={loadingData || problems.length === 0 || updatingProblemVisibility} onClick={toggleAllProblems}>{updatingProblemVisibility ? 'Updating?' : problems.length > 0 && problems.every(problem => problem.enabled) ? 'Disable all' : 'Enable all'}</button><button type="button" className="small-button" onClick={() => { setEditingProblem(null); setNewProblem({ title: '', statement: '' }); setActionDialog('problem'); }}>Add problem</button><button type="button" className="small-button" onClick={() => setImportDialog('questions')}>Import questions</button>  <button className="small-button" onClick={randomlyAssignQuestions}>Randomly assign evenly</button><button className="small-button danger-button" onClick={clearProblems}>Clear all</button></div></div><div className="problem-list">{loadingData ? <LoadingState label="Loading problem statements…" /> : loadError ? <LoadErrorState onRetry={() => load().catch(error => setErrorNotice(error.message))} /> : problems.length === 0 ? <div className="empty">No problem statements yet.</div> : problems.map(problem => <div className="problem-row" key={problem.id}><div><b>#{problem.id}  -  {problem.title}</b><ProblemStatement statement={problem.statement} /></div><div className="row-actions">  <button className="small-button" onClick={() => { setEditingProblem(problem); setNewProblem({ title: problem.title, statement: problem.statement }); setActionDialog('problem'); }}>Edit</button><button className="small-button danger-button" onClick={() => deleteProblem(problem.id)}>Delete</button></div></div>)}</div></section><section className="card table-card"><div className="card-top library-card-top"><div><span className="eyebrow">TEAM ROSTER</span>  <h2>Teams and assignments</h2></div><div className="problem-library-actions"><span className="pill">{loadingData ? 'Loading…' : teams.length + ' teams'}</span><button type="button" className="small-button" onClick={() => setActionDialog('team')}>Create team</button><button type="button" className="small-button" onClick={() => setImportDialog('teams')}>Import teams</button><button className="small-button danger-button" onClick={clearTeams}>Clear all</button></div></div><div className="table-wrap"><table><thead><tr><th>Team</th><th>Members</th><th>Problem</th><th>Actions</th></tr></thead><tbody>{loadingData ? <tr><td colSpan="4"><LoadingState label="Loading teams…" /></td></tr> : loadError ? <tr><td colSpan="4"><LoadErrorState onRetry={() => load().catch(error => setErrorNotice(error.message))} /></td></tr> : teams.length === 0 ? <tr><td colSpan="4"><div className="empty">No teams yet.</div></td></tr> : teams.map(team =>   <tr key={team.id}><td><b>#{team.teamNumber}  -  {team.name}</b></td><td>{team.students.length}</td><td><select value={team.problem?.id || ''} onChange={e => assign(team.id, e.target.value)}><option value="">Unassigned</option>{problems.map(p => <option key={p.id} value={p.id}>{p.id}  -  {p.title}</option>)}</select></td>  <td><div className="row-actions"><button className="small-button" onClick={() => setEditingTeam(team)}>Edit</button><button className="small-button" onClick={() => renameTeam(team)}>Rename</button><button className="small-button danger-button" onClick={() => deleteTeam(team.id)}>Delete</button></div></td></tr>)}</tbody></table></div></section></div>  {editingTeam && <div className="modal-backdrop" onClick={() => setEditingTeam(null)}><section className="member-modal card" onClick={e => e.stopPropagation()}><div className="card-top"><div><span className="eyebrow">EDIT MEMBERS</span><h2>{editingTeam.name}</h2></div><button type="button" className="ghost" onClick={() => setEditingTeam(null)}>Close</button></div><form className="student-form modal-student-form" onSubmit={e => addStudent(e, editingTeam.id)}><input required placeholder="Participant name" value={student.name} onChange={e => setStudent({ ...student, name: e.target.value })} /><input required placeholder="Register number" value={student.registerNumber} onChange={e => setStudent({ ...student, registerNumber: e.target.value })} /><input required={false} type="email" placeholder="Email (optional)" value={student.email} onChange={e => setStudent({ ...student, email: e.target.value })} />  <button>Add participant</button></form>{leaderActionError && <div className="error" role="alert">{leaderActionError}</div>}{editingTeam.students.length === 0 ? <div className="empty">No participants in this team yet.</div> : <div className="modal-member-list">{editingTeam.students.map(item => <div className="modal-member" key={item.id}><div><b>{item.name}</b><small>{item.registerNumber}  -  {item.email || 'No email'}{item.leader ? '  -  Leader' : ''}</small></div><div className="row-actions">{!item.leader && <button type="button" className="small-button" disabled={assigningLeaderId !== null} onClick={() => assignLeader(item.id)}>{assigningLeaderId === item.id ? 'Assigning…' : 'Assign as leader'}</button>}<button type="button" className="small-button" onClick={() => editStudent(item)}>Edit</button><button type="button" className="small-button danger-button" onClick={() => deleteStudent(item.id)}>Remove</button></div></div>)}</div>}{editingTeam.importedFields?.length > 0 && <form className="imported-fields-form" onSubmit={saveImportedFields}><details open><summary>Team details ({importedFieldLabels.length} editable fields)</summary><div className="imported-fields-grid">{orderImportedFields(editingTeam.importedFields || []).slice(0, importedFieldLabels.length).map(field => <label className="imported-field" key={field.columnIndex}><b>{field.fieldName}</b><input maxLength={5000} value={field.fieldValue || ''} onChange={event => setEditingTeam(current => current ? { ...current, importedFields: orderImportedFields(current.importedFields || []).map(item => item.columnIndex === field.columnIndex ? { ...item, fieldValue: event.target.value } : item) } : current)} /></label>)}</div>  </details>{importedFieldsError && <div className="error" role="alert">{importedFieldsError}</div>}{importedFieldsNotice && <div className="success" role="status">{importedFieldsNotice}</div>}<button type="submit" className="small-button" disabled={savingImportedFields}>{savingImportedFields ? 'Saving…' : 'Save team details'}</button></form>}</section></div>}{dialog && <div className="modal-backdrop" onClick={() => setDialog(null)}><form className="card dialog-modal" onClick={e => e.stopPropagation()} onSubmit={saveDialog}><div className="card-top"><h2>{dialog.title}</h2><button type="button" className="ghost" onClick={() => setDialog(null)}>Close</button></div>{dialog.fields.map(field => <label key={field.name}>{field.label}<input required={field.name === 'registerNumber' || field.name === 'name'} type={field.name === 'password' ? 'password' : field.name === 'email' ? 'email' : 'text'} name={field.name} defaultValue={field.value} /></label>)}<button>Save</button></form></div>}{actionDialog && <div className="modal-backdrop import-modal-backdrop" onClick={closeActionDialog}><section className="card import-modal action-modal" role="dialog" aria-modal="true" aria-labelledby="action-dialog-title" onClick={e => e.stopPropagation()}><div className="card-top import-modal-header"><div><span className="eyebrow">COORDINATOR DASHBOARD</span><h2 id="action-dialog-title">{actionDialog === 'team' ? 'Create a team' : editingProblem ? 'Edit problem statement' : 'Add a problem statement'}</h2></div><button type="button" className="ghost" onClick={closeActionDialog}>Close</button></div>  <p className="muted">{actionDialog === 'team' ? 'Enter the registration details and participant roster. Leader name, register number and primary email are required; Username is optional.' : 'Give the problem a short title and describe the challenge for participants.'}</p>{actionDialog === 'team' ? <form className="action-dialog-form team-create-form" onSubmit={createTeam}>{teamCreateError && <div className="error" role="alert">{teamCreateError}</div>}<div className="team-create-fields">{newTeamFields.map((field, index) => <label key={field.columnIndex}>{field.fieldName}<input autoFocus={index === 2} type={index === 11 ? 'email' : index === 10 ? 'tel' : 'text'} required={index === 2 || index === 3 || index === 11} placeholder={index >= 4 && index <= 9 ? 'Leave both fields blank if this member is not part of the team' : ''} value={field.fieldValue} onChange={e => setNewTeamFields(current => current.map((item, fieldIndex) => fieldIndex === index ? { ...item, fieldValue: e.target.value } : item))} /></label>)}</div><div className="import-modal-actions"><button type="button" className="small-button" onClick={closeActionDialog}>Cancel</button><button className="secondary-button">Create team</button></div></form> : <form className="action-dialog-form" onSubmit={saveProblem}><label>Problem title<input autoFocus required placeholder="e.g. Sustainable Campus" value={newProblem.title} onChange={e => setNewProblem({ ...newProblem, title: e.target.value })} /></label><label>Problem statement<textarea required placeholder="Describe the problem for participants" value={newProblem.statement} onChange={e => setNewProblem({ ...newProblem, statement: e.target.value })} /></label><div className="import-modal-actions"><button type="button" className="small-button" onClick={closeActionDialog}>Cancel</button><button className="secondary-button">{editingProblem ? 'Save changes' : 'Add problem'}</button></div></form>}</section></div>}{importDialog && <div className="modal-backdrop import-modal-backdrop" onClick={closeImportDialog}><section className="card import-modal" role="dialog" aria-modal="true" aria-labelledby="import-dialog-title" onClick={e => e.stopPropagation()}><div className="card-top import-modal-header"><div><span className="eyebrow">BULK IMPORT</span><h2 id="import-dialog-title">{importDialog === 'teams' ? 'Import teams' : 'Import questions'}</h2></div><button type="button" className="ghost" onClick={closeImportDialog}>Close</button></div><p className="muted">{importDialog === 'teams' ? 'Team uploads accept only the exact 19 team table columns shown below, in the same order. Extra, missing, or renamed columns are rejected.' : 'Choose a CSV file with a Statement, Problem Statement, Question, or Description column. Title is optional.'}</p>{importDialog === 'teams' && <div className="team-import-guidance"><button type="button" className="small-button" onClick={downloadTeamImportTemplate}>Download exact CSV template</button><ol>{importedFieldLabels.map(label => <li key={label}><code>{label}</code></li>)}</ol></div>}<form onSubmit={importDialog === 'teams' ? importTeams : importQuestions}><label className="import-file-picker"><input type="file" accept={importDialog === 'teams' ? '.csv,.xlsx,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,text/csv' : '.csv,text/csv'} required onChange={e => importDialog === 'teams' ? setCsvFile(e.target.files[0] || null) : setQuestionCsvFile(e.target.files[0] || null)} /><span className="import-file-button">Choose file</span><span className="import-file-name">{(importDialog === 'teams' ? csvFile : questionCsvFile)?.name || 'No file selected'}</span></label><div className="import-modal-actions"><button type="button" className="small-button" onClick={closeImportDialog}>Cancel</button><button className="secondary-button" disabled={!(importDialog === 'teams' ? csvFile : questionCsvFile)}>Import {importDialog === 'teams' ? 'teams' : 'questions'}</button></div></form></section></div>}</main>;
+  return <main className="app-shell">  <header><div className="brand"><img src="/vit-logo-transparent.png" alt="Vellore Institute of Technology" /><span>GREENOPS</span></div><div className="header-actions"><button className="ghost" onClick={() => setAuthed(false)}>Sign out</button></div></header>  <div className="content admin-content"><div className="welcome"><span className="eyebrow">GREENOPS · COORDINATOR PORTAL</span><h1>Command center</h1><p className="muted">Manage GreenOps participants, problem statements and team submissions.</p></div>{notice && <div className={noticeType} role={noticeType === 'error' ? 'alert' : 'status'}>{notice}</div>}  <LoginWindowForm settings={loginSettings} onSettingsChange={setLoginSettings} onSubmit={saveLoginSettings} onTogglePause={toggleParticipantAccessPause} pauseUpdating={pauseUpdating} attendancePassword={attendancePassword} onAttendancePasswordChange={setAttendancePassword} /><section className="card table-card"><div className="card-top"><div><span className="eyebrow">SUBMISSIONS</span><h2>Team submissions</h2></div><div className="problem-library-actions"><span className="pill">{loadingData ? 'Loading…' : submissions.length + ' submitted'}</span><button type="button" className="small-button" onClick={downloadSubmissions} disabled={downloadingSubmissions}>{downloadingSubmissions ? 'Downloading...' : 'Download Excel'}</button><button type="button" className="small-button danger-button" onClick={clearSubmissions} disabled={loadingData}>Clear all</button></div></div>{loadingData ? <LoadingState label="Loading team submissions…" /> : loadError ? <LoadErrorState onRetry={() => load().catch(error => setErrorNotice(error.message))} /> : submissions.length === 0 ? <div className="empty">No team submissions yet.</div> : <div className="table-wrap"><table><thead><tr><th>Group</th><th>Google Drive</th><th>GitHub</th><th>Updated</th></tr></thead><tbody>{submissions.map(item => <tr key={item.id}><td><b>{item.team?.name || `#${item.team?.teamNumber || ''}`}</b></td><td><a href={item.googleDriveLink} target="_blank" rel="noreferrer">Open document</a></td><td><a href={item.githubLink} target="_blank" rel="noreferrer">Open repository</a></td><td>{item.updatedAt ? new Date(item.updatedAt).toLocaleString() : '-'}</td></tr>)}</tbody></table></div>}</section><section className="card table-card"><div className="card-top library-card-top"><div><span className="eyebrow">PROBLEM LIBRARY</span><h2>Problem statements</h2></div>  <div className="problem-library-actions"><span className="pill">{loadingData ? 'Loading…' : problems.length + ' questions'}</span><button type="button" className="small-button bulk-problem-toggle" disabled={loadingData || problems.length === 0 || updatingProblemVisibility} onClick={toggleAllProblems}>{updatingProblemVisibility ? 'Updating?' : problems.length > 0 && problems.every(problem => problem.enabled) ? 'Disable all' : 'Enable all'}</button><button type="button" className="small-button" onClick={() => { setEditingProblem(null); setNewProblem({ title: '', statement: '' }); setActionDialog('problem'); }}>Add problem</button><button type="button" className="small-button" onClick={() => setImportDialog('questions')}>Import questions</button>  <button className="small-button" onClick={randomlyAssignQuestions}>Randomly assign evenly</button><button className="small-button danger-button" onClick={clearProblems}>Clear all</button></div></div><div className="problem-list">{loadingData ? <LoadingState label="Loading problem statements…" /> : loadError ? <LoadErrorState onRetry={() => load().catch(error => setErrorNotice(error.message))} /> : problems.length === 0 ? <div className="empty">No problem statements yet.</div> : problems.map(problem => <div className="problem-row" key={problem.id}><div><b>#{problem.id}  -  {problem.title}</b><ProblemStatement statement={problem.statement} /></div><div className="row-actions">  <button className="small-button" onClick={() => { setEditingProblem(problem); setNewProblem({ title: problem.title, statement: problem.statement }); setActionDialog('problem'); }}>Edit</button><button className="small-button danger-button" onClick={() => deleteProblem(problem.id)}>Delete</button></div></div>)}</div></section><section className="card table-card"><div className="card-top library-card-top"><div><span className="eyebrow">TEAM ROSTER</span>  <h2>Teams and assignments</h2></div><div className="problem-library-actions"><span className="pill">{loadingData ? 'Loading…' : teams.length + ' teams'}</span><button type="button" className="small-button" onClick={() => setActionDialog('team')}>Create team</button><button type="button" className="small-button" onClick={() => setImportDialog('teams')}>Import teams</button><button className="small-button danger-button" onClick={clearTeams}>Clear all</button></div></div><div className="table-wrap"><table><thead><tr><th>Team</th><th>Present / total</th><th>Problem</th><th>Actions</th></tr></thead><tbody>{loadingData ? <tr><td colSpan="4"><LoadingState label="Loading teams…" /></td></tr> : loadError ? <tr><td colSpan="4"><LoadErrorState onRetry={() => load().catch(error => setErrorNotice(error.message))} /></td></tr> : teams.length === 0 ? <tr><td colSpan="4"><div className="empty">No teams yet.</div></td></tr> : teams.map(team =>   <tr key={team.id}><td><b>#{team.teamNumber}  -  {team.name}</b></td><td>{team.students.filter(member => member.present).length} / {team.students.length}</td><td><select value={team.problem?.id || ''} onChange={e => assign(team.id, e.target.value)}><option value="">Unassigned</option>{problems.map(p => <option key={p.id} value={p.id}>{p.id}  -  {p.title}</option>)}</select></td>  <td><div className="row-actions"><button className="small-button" onClick={() => setEditingTeam(team)}>Edit</button><button className="small-button" onClick={() => renameTeam(team)}>Rename</button><button className="small-button danger-button" onClick={() => deleteTeam(team.id)}>Delete</button></div></td></tr>)}</tbody></table></div></section></div>  {editingTeam && <div className="modal-backdrop" onClick={() => setEditingTeam(null)}><section className="member-modal card" onClick={e => e.stopPropagation()}><div className="card-top"><div><span className="eyebrow">EDIT MEMBERS</span><h2>{editingTeam.name}</h2></div><button type="button" className="ghost" onClick={() => setEditingTeam(null)}>Close</button></div><form className="student-form modal-student-form" onSubmit={e => addStudent(e, editingTeam.id)}><input required placeholder="Participant name" value={student.name} onChange={e => setStudent({ ...student, name: e.target.value })} /><input required placeholder="Register number" value={student.registerNumber} onChange={e => setStudent({ ...student, registerNumber: e.target.value })} /><input required={false} type="email" placeholder="Email (optional)" value={student.email} onChange={e => setStudent({ ...student, email: e.target.value })} />  <button>Add participant</button></form>{leaderActionError && <div className="error" role="alert">{leaderActionError}</div>}{editingTeam.students.length === 0 ? <div className="empty">No participants in this team yet.</div> : <div className="modal-member-list">{editingTeam.students.map(item => <div className="modal-member" key={item.id}><div><b>{item.name}</b>  <small>{item.registerNumber}  -  {item.email || 'No email'}{item.leader ? '  -  Leader' : ''}  -  {item.present ? 'Present' : 'Absent'}</small></div><div className="row-actions">{!item.leader && <button type="button" className="small-button" disabled={assigningLeaderId !== null} onClick={() => assignLeader(item.id)}>{assigningLeaderId === item.id ? 'Assigning…' : 'Assign as leader'}</button>}<button type="button" className="small-button" onClick={() => editStudent(item)}>Edit</button><button type="button" className="small-button danger-button" onClick={() => deleteStudent(item.id)}>Remove</button></div></div>)}</div>}{editingTeam.importedFields?.length > 0 && <form className="imported-fields-form" onSubmit={saveImportedFields}><details open><summary>Team details ({importedFieldLabels.length} editable fields)</summary><div className="imported-fields-grid">{orderImportedFields(editingTeam.importedFields || []).slice(0, importedFieldLabels.length).map(field => <label className="imported-field" key={field.columnIndex}><b>{field.fieldName}</b><input maxLength={5000} value={field.fieldValue || ''} onChange={event => setEditingTeam(current => current ? { ...current, importedFields: orderImportedFields(current.importedFields || []).map(item => item.columnIndex === field.columnIndex ? { ...item, fieldValue: event.target.value } : item) } : current)} /></label>)}</div>  </details>{importedFieldsError && <div className="error" role="alert">{importedFieldsError}</div>}{importedFieldsNotice && <div className="success" role="status">{importedFieldsNotice}</div>}<button type="submit" className="small-button" disabled={savingImportedFields}>{savingImportedFields ? 'Saving…' : 'Save team details'}</button></form>}</section></div>}{dialog && <div className="modal-backdrop" onClick={() => setDialog(null)}><form className="card dialog-modal" onClick={e => e.stopPropagation()} onSubmit={saveDialog}><div className="card-top"><h2>{dialog.title}</h2><button type="button" className="ghost" onClick={() => setDialog(null)}>Close</button></div>{dialog.fields.map(field => <label key={field.name}>{field.label}<input required={field.name === 'registerNumber' || field.name === 'name'} type={field.name === 'password' ? 'password' : field.name === 'email' ? 'email' : 'text'} name={field.name} defaultValue={field.value} /></label>)}<button>Save</button></form></div>}{actionDialog && <div className="modal-backdrop import-modal-backdrop" onClick={closeActionDialog}><section className="card import-modal action-modal" role="dialog" aria-modal="true" aria-labelledby="action-dialog-title" onClick={e => e.stopPropagation()}><div className="card-top import-modal-header"><div><span className="eyebrow">COORDINATOR DASHBOARD</span><h2 id="action-dialog-title">{actionDialog === 'team' ? 'Create a team' : editingProblem ? 'Edit problem statement' : 'Add a problem statement'}</h2></div><button type="button" className="ghost" onClick={closeActionDialog}>Close</button></div>  <p className="muted">{actionDialog === 'team' ? 'Enter the registration details and participant roster. Leader name, register number and primary email are required; Username is optional.' : 'Give the problem a short title and describe the challenge for participants.'}</p>{actionDialog === 'team' ? <form className="action-dialog-form team-create-form" onSubmit={createTeam}>{teamCreateError && <div className="error" role="alert">{teamCreateError}</div>}<div className="team-create-fields">{newTeamFields.map((field, index) => <label key={field.columnIndex}>{field.fieldName}<input autoFocus={index === 2} type={index === 11 ? 'email' : index === 10 ? 'tel' : 'text'} required={index === 2 || index === 3 || index === 11} placeholder={index >= 4 && index <= 9 ? 'Leave both fields blank if this member is not part of the team' : ''} value={field.fieldValue} onChange={e => setNewTeamFields(current => current.map((item, fieldIndex) => fieldIndex === index ? { ...item, fieldValue: e.target.value } : item))} /></label>)}</div><div className="import-modal-actions"><button type="button" className="small-button" onClick={closeActionDialog}>Cancel</button><button className="secondary-button">Create team</button></div></form> : <form className="action-dialog-form" onSubmit={saveProblem}><label>Problem title<input autoFocus required placeholder="e.g. Sustainable Campus" value={newProblem.title} onChange={e => setNewProblem({ ...newProblem, title: e.target.value })} /></label><label>Problem statement<textarea required placeholder="Describe the problem for participants" value={newProblem.statement} onChange={e => setNewProblem({ ...newProblem, statement: e.target.value })} /></label><div className="import-modal-actions"><button type="button" className="small-button" onClick={closeActionDialog}>Cancel</button><button className="secondary-button">{editingProblem ? 'Save changes' : 'Add problem'}</button></div></form>}</section></div>}{importDialog && <div className="modal-backdrop import-modal-backdrop" onClick={closeImportDialog}><section className="card import-modal" role="dialog" aria-modal="true" aria-labelledby="import-dialog-title" onClick={e => e.stopPropagation()}><div className="card-top import-modal-header"><div><span className="eyebrow">BULK IMPORT</span><h2 id="import-dialog-title">{importDialog === 'teams' ? 'Import teams' : 'Import questions'}</h2></div><button type="button" className="ghost" onClick={closeImportDialog}>Close</button></div><p className="muted">{importDialog === 'teams' ? 'Team uploads accept only the exact 19 team table columns shown below, in the same order. Extra, missing, or renamed columns are rejected.' : 'Choose a CSV file with a Statement, Problem Statement, Question, or Description column. Title is optional.'}</p>{importDialog === 'teams' && <div className="team-import-guidance"><button type="button" className="small-button" onClick={downloadTeamImportTemplate}>Download exact CSV template</button><ol>{importedFieldLabels.map(label => <li key={label}><code>{label}</code></li>)}</ol></div>}<form onSubmit={importDialog === 'teams' ? importTeams : importQuestions}><label className="import-file-picker"><input type="file" accept={importDialog === 'teams' ? '.csv,.xlsx,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,text/csv' : '.csv,text/csv'} required onChange={e => importDialog === 'teams' ? setCsvFile(e.target.files[0] || null) : setQuestionCsvFile(e.target.files[0] || null)} /><span className="import-file-button">Choose file</span><span className="import-file-name">{(importDialog === 'teams' ? csvFile : questionCsvFile)?.name || 'No file selected'}</span></label><div className="import-modal-actions"><button type="button" className="small-button" onClick={closeImportDialog}>Cancel</button><button className="secondary-button" disabled={!(importDialog === 'teams' ? csvFile : questionCsvFile)}>Import {importDialog === 'teams' ? 'teams' : 'questions'}</button></div></form></section></div>}</main>;
+}
+
+function AttendanceCoordinator({ onExit }) {
+  const [password, setPassword] = useState('');
+  const [authenticated, setAuthenticated] = useState(false);
+  const [teams, setTeams] = useState([]);
+  const [query, setQuery] = useState('');
+  const [error, setError] = useState('');
+  const [loading, setLoading] = useState(false);
+  const [updatingStudentId, setUpdatingStudentId] = useState(null);
+
+  async function loadAttendance() {
+    const loadedTeams = await request('/attendance/teams', { headers: { 'X-Attendance-Password': password } });
+    setTeams(loadedTeams);
+  }
+
+  async function signIn(event) {
+    event.preventDefault();
+    setLoading(true);
+    setError('');
+    try {
+      setTeams(await request('/attendance/login', { method: 'POST', body: JSON.stringify({ password }) }));
+      setAuthenticated(true);
+    } catch (requestError) {
+      setError(requestError.message);
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  async function toggleAttendance(student) {
+    setUpdatingStudentId(student.id);
+    setError('');
+    try {
+      const updated = await request(`/attendance/students/${student.id}`, {
+        method: 'PUT',
+        headers: { 'X-Attendance-Password': password },
+        body: JSON.stringify({ present: !student.present })
+      });
+      setTeams(current => current.map(team => ({
+        ...team,
+        students: team.students.map(member => member.id === updated.id ? updated : member)
+      })));
+    } catch (requestError) {
+      setError(requestError.message);
+    } finally {
+      setUpdatingStudentId(null);
+    }
+  }
+
+  useEffect(() => {
+    if (!authenticated) return undefined;
+    const timer = window.setInterval(() => {
+      loadAttendance().catch(requestError => setError(requestError.message));
+    }, 15000);
+    return () => window.clearInterval(timer);
+  }, [authenticated, password]);
+
+  function signOut() {
+    setAuthenticated(false);
+    setPassword('');
+    setTeams([]);
+    onExit();
+  }
+
+  if (!authenticated) {
+    return <main className="login-shell admin-login"><form className="card login-card" onSubmit={signIn}>
+      <span className="eyebrow">GREENOPS · ATTENDANCE</span>
+      <h2>Attendance check-in.</h2>
+      <p className="muted">Sign in to mark each participant present as they arrive. Team members start as absent until checked in.</p>
+      <label>Attendance coordinator password<input type="password" required autoComplete="current-password" value={password} onChange={event => setPassword(event.target.value)} /></label>
+      {error && <div className="error" role="alert">{error}</div>}
+      <button disabled={loading}>{loading ? 'Signing in…' : 'Open attendance'}</button>
+      <button type="button" className="attendance-entry-button" onClick={onExit}>Back to participant login</button>
+    </form></main>;
+  }
+
+  const allStudents = teams.flatMap(team => team.students);
+  const presentCount = allStudents.filter(student => student.present).length;
+  const normalizedQuery = query.trim().toLowerCase();
+  const filteredTeams = teams.map(team => ({
+    ...team,
+    students: team.students.filter(student => !normalizedQuery
+      || `${team.name} ${team.teamNumber || ''} ${student.name} ${student.registerNumber}`.toLowerCase().includes(normalizedQuery))
+  })).filter(team => team.students.length > 0);
+
+  return <main className="app-shell">
+    <header><div className="brand"><img src="/vit-logo-transparent.png" alt="Vellore Institute of Technology" /><span>GREENOPS</span></div><div className="header-actions"><span className="session-label">Attendance session active</span><button className="ghost" onClick={signOut}>Sign out</button></div></header>
+    <div className="content admin-content attendance-content">
+      <div className="welcome"><span className="eyebrow">GREENOPS · ATTENDANCE COORDINATOR</span><h1>Participant check-in</h1><p className="muted">Mark participants present one by one. You can correct a check-in at any time.</p></div>
+      {error && <div className="error" role="alert">{error}</div>}
+      <section className="card attendance-toolbar">
+        <div className="attendance-counts"><span><b>{presentCount}</b><small>Present</small></span><span><b>{allStudents.length - presentCount}</b><small>Absent</small></span><span><b>{allStudents.length}</b><small>Total members</small></span></div>
+        <label>Find team or participant<input type="search" value={query} onChange={event => setQuery(event.target.value)} placeholder="Team name, participant or register number" /></label>
+      </section>
+      {filteredTeams.length === 0
+        ? <div className="card empty">{teams.length ? 'No team members match this search.' : 'No teams are available for check-in.'}</div>
+        : <div className="attendance-team-list">{filteredTeams.map(team => <section className="card attendance-team" key={team.id}>
+          <div className="card-top"><div><span className="eyebrow">TEAM {team.teamNumber ? `#${team.teamNumber}` : ''}</span><h2>{team.name}</h2></div><span className="pill">{team.students.filter(student => student.present).length}/{team.students.length} present</span></div>
+          <div className="attendance-member-list">{team.students.map(student => <div className="attendance-member" key={student.id}>
+            <div><b>{student.name}</b><small>{student.registerNumber}{student.leader ? ' · Group leader' : ''}</small></div>
+            <span className={`attendance-status ${student.present ? 'is-present' : 'is-absent'}`}>{student.present ? 'Present' : 'Absent'}</span>
+            <button type="button" className={`small-button ${student.present ? 'danger-button' : ''}`} disabled={updatingStudentId !== null} onClick={() => toggleAttendance(student)}>
+              {updatingStudentId === student.id ? 'Saving…' : student.present ? 'Mark absent' : 'Mark present'}
+            </button>
+          </div>)}</div>
+        </section>)}</div>}
+    </div>
+  </main>;
 }
 
 function App() {
@@ -1079,8 +1202,10 @@ function App() {
     setSession(updatedSession);
     return team;
   };
-  const switchMode = () => { setMode(mode === 'admin' ? 'student' : 'admin'); logout(); };
-  return <>{mode === 'admin' ? <Admin /> : session ? <Student team={session.team} credentials={session.credentials} logout={logout} refreshSession={refreshParticipantSession} /> : <Login onLogin={onLogin} onAdmin={switchMode} />}{mode === 'student' && sessionExpired && <div className="session-expired"><div className="card"><h2>Participant session expired</h2><p>Your session has expired for security. Please sign in again.</p><button onClick={logout}>Sign out</button></div></div>}{(mode === 'admin' || session) && <button className="mode-switch" onClick={switchMode}>{mode === 'admin' ? 'Participant login' : 'Coordinator Login'}</button>}</>;
+  const openAdmin = () => { logout(); setMode('admin'); };
+  const openAttendance = () => { logout(); setMode('attendance'); };
+  const openParticipant = () => { logout(); setMode('student'); };
+  return <>{mode === 'admin' ? <Admin /> : mode === 'attendance' ? <AttendanceCoordinator onExit={openParticipant} /> : session ? <Student team={session.team} credentials={session.credentials} logout={logout} refreshSession={refreshParticipantSession} /> : <Login onLogin={onLogin} onAdmin={openAdmin} onAttendance={openAttendance} />}{mode === 'student' && sessionExpired && <div className="session-expired"><div className="card"><h2>Participant session expired</h2><p>Your session has expired for security. Please sign in again.</p><button onClick={logout}>Sign out</button></div></div>}{(mode === 'admin' || mode === 'attendance' || session) && <button className="mode-switch" onClick={openParticipant}>Participant login</button>}</>;
 }
 
 createRoot(document.getElementById('root')).render(<App />);

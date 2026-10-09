@@ -262,6 +262,28 @@ body:has(.login-shell) .mode-switch{top:20px;bottom:auto}
 .problem-card .problem-statement h3{margin-top:24px;text-transform:none}
 .problem-row .problem-statement{max-width:860px;font-size:.8rem}
 .problem-row .problem-statement p{margin-bottom:9px}
+.attendance-entry-button{width:100%;margin-top:12px;padding:11px;border:1px solid #dce4de;border-radius:9px;color:#416351;background:#fff;font-weight:700}
+.attendance-entry-button:hover{background:#f3f7f2}
+.attendance-password-field{display:block;margin-top:18px;color:#53645a;font-size:.75rem;font-weight:700}
+.attendance-password-field input,.attendance-toolbar input{display:block;width:100%;margin-top:8px;padding:12px}
+.attendance-content{display:grid;gap:22px}
+.attendance-toolbar{display:grid;grid-template-columns:auto minmax(260px,1fr);align-items:center;gap:28px}
+.attendance-counts{display:flex;gap:28px}
+.attendance-counts span{display:grid;gap:4px}
+.attendance-counts b{font-size:1.45rem;color:#173e2c}
+.attendance-counts small{color:#718077;font-size:.7rem}
+.attendance-toolbar label{color:#53645a;font-size:.75rem;font-weight:700}
+.attendance-team-list{display:grid;gap:18px}
+.attendance-team{padding:24px}
+.attendance-team .card-top h2{margin:8px 0 0;font-size:1.35rem}
+.attendance-member-list{margin-top:16px}
+.attendance-member{display:grid;grid-template-columns:minmax(0,1fr) auto auto;align-items:center;gap:14px;padding:12px 0;border-top:1px solid #edf1ee}
+.attendance-member small{display:block;margin-top:4px;color:#718077;font-size:.72rem}
+.attendance-status{min-width:70px;text-align:center;font-size:.7rem;font-weight:800}
+.attendance-status.is-present{color:#397025}
+.attendance-status.is-absent{color:#9a6550}
+.attendance-team .empty{margin-top:0}
+@media(max-width:650px){.attendance-toolbar{grid-template-columns:1fr;gap:18px}.attendance-counts{justify-content:space-between;gap:10px}.attendance-member{grid-template-columns:minmax(0,1fr) auto;gap:10px}.attendance-status{grid-column:2}.attendance-member button{grid-column:1/-1;width:100%}}
 .event-details-heading{max-width:920px;margin:0 auto 28px}
 .event-details-heading .eyebrow{color:#4d795a}
 .event-details-heading h2{max-width:860px;margin:12px 0;font-size:clamp(1.7rem,3.7vw,3rem);line-height:1.08;letter-spacing:-.055em}

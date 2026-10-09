@@ -24,6 +24,8 @@ public class Student {
     private String email;
     @Column(nullable = false)
     private boolean leader = false;
+    @Column(name = "present", nullable = false, columnDefinition = "boolean default false")
+    private Boolean present = false;
     @ManyToOne(fetch = FetchType.LAZY)
     @JoinColumn(name = "team_id", foreignKey = @ForeignKey(name = "fk_students_team"))
     @JsonIgnore
@@ -44,6 +46,8 @@ public class Student {
     public void setEmail(String value) { email = value; }
     public boolean isLeader() { return leader; }
     public void setLeader(boolean value) { leader = value; }
+    public boolean isPresent() { return Boolean.TRUE.equals(present); }
+    public void setPresent(boolean value) { present = value; }
     public Team getTeam() { return team; }
     public void setTeam(Team value) {
         team = value;

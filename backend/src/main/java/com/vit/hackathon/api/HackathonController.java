@@ -114,13 +114,45 @@ public class HackathonController {
         Team team = authenticateTeam(request.email(), request.contactNumber());
         ensureTeamNumber(team);
         String leaderRegisterNumber = team.getStudents().stream()
+                .filter(Student::isPresent)
                 .filter(Student::isLeader)
                 .map(Student::getRegisterNumber)
                 .findFirst()
                 .orElse(null);
         Problem visibleProblem = team.getProblem() != null && team.getProblem().isEnabled() ? team.getProblem() : null;
         return new StudentTeamResponse(team.getName(), team.getTeamNumber(), leaderRegisterNumber, visibleProblem,
-                team.getStudents(), submissions.findByTeamId(team.getId()).orElse(null), team.getImportedFields());
+                team.getStudents().stream().filter(Student::isPresent).toList(),
+                submissions.findByTeamId(team.getId()).orElse(null), team.getImportedFields());
+    }
+
+    @PostMapping("/attendance/login")
+    public List<AttendanceTeamResponse> attendanceLogin(@RequestBody AttendanceLoginRequest request) {
+        if (request == null) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Attendance password is required");
+        }
+        requireAttendance(request.password());
+        return attendanceTeams();
+    }
+
+    @GetMapping("/attendance/teams")
+    public List<AttendanceTeamResponse> attendanceTeams(@RequestHeader("X-Attendance-Password") String password) {
+        requireAttendance(password);
+        return attendanceTeams();
+    }
+
+    @PutMapping("/attendance/students/{studentId}")
+    public AttendanceMemberResponse setAttendance(@RequestHeader("X-Attendance-Password") String password,
+                                                   @PathVariable Long studentId,
+                                                   @RequestBody AttendanceRequest request) {
+        requireAttendance(password);
+        if (request == null || request.present() == null) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Attendance status is required");
+        }
+        Student student = students.findById(studentId)
+                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Participant not found"));
+        student.setPresent(request.present());
+        Student saved = students.save(student);
+        return attendanceMember(saved);
     }
 
     @GetMapping("/admin/settings")
@@ -145,6 +177,18 @@ public class HackathonController {
         saveSetting("login-enabled", Boolean.toString(request.loginEnabled()));
         saveSetting("login-start", request.startTime() == null ? "" : request.startTime());
         saveSetting("login-end", request.endTime() == null ? "" : request.endTime());
+        String attendancePassword = request.attendancePassword();
+        if (attendancePassword != null && !attendancePassword.isBlank()) {
+            if (attendancePassword.length() < 8 || attendancePassword.length() > 72) {
+                throw new ResponseStatusException(HttpStatus.BAD_REQUEST,
+                        "Attendance password must be between 8 and 72 characters");
+            }
+            if (passwordEncoder.matches(attendancePassword, adminPassword)) {
+                throw new ResponseStatusException(HttpStatus.BAD_REQUEST,
+                        "Attendance password must be different from the admin password");
+            }
+            saveSetting("attendance-password", passwordEncoder.encode(attendancePassword));
+        }
         return settingsPayload();
     }
 
@@ -1121,6 +1165,34 @@ public class HackathonController {
         attemptLimiter.adminSucceeded(clientIdentity);
     }
 
+    private void requireAttendance(String password) {
+        String clientIdentity = adminClientIdentity();
+        attemptLimiter.checkAttendance(clientIdentity);
+        String encodedPassword = settingValue("attendance-password", "");
+        if (encodedPassword.isBlank()) {
+            throw new ResponseStatusException(HttpStatus.FORBIDDEN,
+                    "Attendance access is not configured. Ask an administrator to set it up.");
+        }
+        if (password == null || !passwordEncoder.matches(password, encodedPassword)) {
+            attemptLimiter.attendanceFailed(clientIdentity);
+            throw new ResponseStatusException(HttpStatus.UNAUTHORIZED, "Invalid attendance password");
+        }
+        attemptLimiter.attendanceSucceeded(clientIdentity);
+    }
+
+    private List<AttendanceTeamResponse> attendanceTeams() {
+        return teams.findAll().stream()
+                .sorted(Comparator.comparing(Team::getTeamNumber, Comparator.nullsLast(Comparator.naturalOrder())))
+                .map(team -> new AttendanceTeamResponse(team.getId(), team.getName(), team.getTeamNumber(),
+                        team.getStudents().stream().map(this::attendanceMember).toList()))
+                .toList();
+    }
+
+    private AttendanceMemberResponse attendanceMember(Student student) {
+        return new AttendanceMemberResponse(student.getId(), student.getName(), student.getRegisterNumber(),
+                student.isLeader(), student.isPresent());
+    }
+
     private String adminClientIdentity() {
         if (RequestContextHolder.getRequestAttributes() instanceof ServletRequestAttributes attributes) {
             String remoteAddress = attributes.getRequest().getRemoteAddr();
@@ -1264,7 +1336,13 @@ public class HackathonController {
     public record TeamRequest(String name, List<ImportedTeamField> importedFields) {}
     public record ImportedFieldsRequest(List<ImportedTeamField> fields) {}
     public record StudentRequest(String name, String registerNumber, String email) {}
-    public record SettingsRequest(boolean loginEnabled, String startTime, String endTime) {}
+    public record SettingsRequest(boolean loginEnabled, String startTime, String endTime, String attendancePassword) {}
+    public record AttendanceLoginRequest(String password) {}
+    public record AttendanceRequest(Boolean present) {}
+    public record AttendanceMemberResponse(Long id, String name, String registerNumber, boolean leader,
+                                           boolean present) {}
+    public record AttendanceTeamResponse(Long id, String name, Integer teamNumber,
+                                         List<AttendanceMemberResponse> students) {}
     public record PauseRequest(boolean paused) {}
     public record SubmissionRequest(String email, String contactNumber,
                                     String googleDriveLink, String githubLink) {}
@@ -1305,6 +1383,7 @@ public class HackathonController {
         payload.put("accessPaused", Boolean.parseBoolean(settingValue("login-paused", "false")));
         payload.put("startTime", localTime(settingValue("login-start", "")));
         payload.put("endTime", localTime(settingValue("login-end", "")));
+        payload.put("attendancePasswordConfigured", !settingValue("attendance-password", "").isBlank());
         return payload;
     }
 
