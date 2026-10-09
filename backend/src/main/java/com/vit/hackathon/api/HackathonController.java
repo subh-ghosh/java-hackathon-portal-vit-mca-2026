@@ -142,7 +142,8 @@ public class HackathonController {
                 team.isAdvancedToRoundTwo(), roundTwoPublished && team.isAdvancedToRoundTwo()
                         ? team.getProblem() : null,
                 team.isAdvancedToRoundTwo() ? roundTwoSubmissions.findByTeamId(team.getId()).orElse(null) : null,
-                roundTwoOpen, roundTwoPublished, localTime(settingValue("round-two-deadline", "")),
+                roundTwoOpen, roundTwoPublished,
+                localTime(settingValue("round-two-end", settingValue("round-two-deadline", ""))),
                 team.getRoundTwoStatus());
     }
 
@@ -230,10 +231,10 @@ public class HackathonController {
         if (startTime != null && endTime != null && !endTime.isAfter(startTime)) {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Round 1 end time must be after start time");
         }
-        OffsetDateTime deadline = parseOptionalTime(request.deadline(), "Round 2 deadline");
-        if ("2".equals(request.activeRound()) && deadline != null
-                && !deadline.isAfter(OffsetDateTime.now(ZoneOffset.UTC))) {
-            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Round 2 deadline must be in the future");
+        OffsetDateTime roundTwoStart = parseOptionalTime(request.roundTwoStartTime(), "Round 2 start");
+        OffsetDateTime roundTwoEnd = parseOptionalTime(request.roundTwoEndTime(), "Round 2 end");
+        if (roundTwoStart != null && roundTwoEnd != null && !roundTwoEnd.isAfter(roundTwoStart)) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Round 2 end time must be after start time");
         }
         saveSetting("active-round", request.activeRound());
         saveSetting("login-enabled", Boolean.toString("1".equals(request.activeRound())));
@@ -243,7 +244,9 @@ public class HackathonController {
         if ("2".equals(request.activeRound())) {
             saveSetting("round-two-published", "true");
         }
-        saveSetting("round-two-deadline", request.deadline() == null ? "" : request.deadline());
+        saveSetting("round-two-start", request.roundTwoStartTime() == null ? "" : request.roundTwoStartTime());
+        saveSetting("round-two-end", request.roundTwoEndTime() == null ? "" : request.roundTwoEndTime());
+        saveSetting("round-two-deadline", request.roundTwoEndTime() == null ? "" : request.roundTwoEndTime());
         updateAttendancePassword(request.attendancePassword());
 
         Map<String, Object> payload = settingsPayload();
@@ -346,15 +349,17 @@ public class HackathonController {
         if (request == null) {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Round 2 settings are required");
         }
-        OffsetDateTime deadline = parseOptionalTime(request.deadline(), "Round 2 deadline");
-        if (request.enabled() && deadline != null && !deadline.isAfter(OffsetDateTime.now(ZoneOffset.UTC))) {
-            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Round 2 deadline must be in the future");
+        OffsetDateTime startTime = parseOptionalTime(settingValue("round-two-start", ""), "Round 2 start");
+        OffsetDateTime endTime = parseOptionalTime(request.deadline(), "Round 2 end");
+        if (startTime != null && endTime != null && !endTime.isAfter(startTime)) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Round 2 end time must be after start time");
         }
         saveSetting("round-two-enabled", Boolean.toString(request.enabled()));
         saveSetting("active-round", request.enabled() ? "2" : "1");
         if (request.enabled()) {
             saveSetting("round-two-published", "true");
         }
+        saveSetting("round-two-end", request.deadline() == null ? "" : request.deadline());
         saveSetting("round-two-deadline", request.deadline() == null ? "" : request.deadline());
         return roundTwoSettingsPayload();
     }
@@ -484,6 +489,69 @@ public class HackathonController {
         List<Team> allTeams = teams.findAll();
         allTeams.forEach(this::ensureTeamNumber);
         return allTeams;
+    }
+
+    @GetMapping("/admin/teams/export")
+    public ResponseEntity<byte[]> exportTeams(@RequestHeader("X-Admin-Password") String password) {
+        requireAdmin(password);
+        try (Workbook workbook = new XSSFWorkbook(); ByteArrayOutputStream output = new ByteArrayOutputStream()) {
+            Sheet sheet = workbook.createSheet("Teams");
+            Row header = sheet.createRow(0);
+            List<String> columns = new ArrayList<>();
+            columns.add("Team number");
+            columns.add("Team name");
+            columns.addAll(TeamRegistrationFields.LABELS);
+            columns.addAll(List.of(
+                    "Current team members", "Present members", "Round 2 qualification",
+                    "Assigned problem ID", "Assigned problem title", "Assigned problem statement"
+            ));
+            for (int i = 0; i < columns.size(); i++) {
+                setCell(header, i, columns.get(i));
+            }
+
+            int rowNumber = 1;
+            for (Team team : teams.findAll()) {
+                ensureTeamNumber(team);
+                Row row = sheet.createRow(rowNumber++);
+                setCell(row, 0, team.getTeamNumber() == null ? "" : team.getTeamNumber().toString());
+                setCell(row, 1, team.getName());
+                List<ImportedTeamField> importedFields = team.getImportedFields();
+                for (ImportedTeamField field : importedFields) {
+                    setCell(row, 2 + field.getColumnIndex(), field.getFieldValue());
+                }
+                String members = team.getStudents().stream()
+                        .map(student -> String.join(" · ",
+                                student.getName(),
+                                student.getRegisterNumber(),
+                                student.getEmail() == null ? "" : student.getEmail(),
+                                student.isLeader() ? "Leader" : "",
+                                student.isPresent() ? "Present" : "Absent"))
+                        .collect(Collectors.joining("\n"));
+                int detailsColumn = 2 + TeamRegistrationFields.LABELS.size();
+                setCell(row, detailsColumn, members);
+                setCell(row, detailsColumn + 1, team.getStudents().stream()
+                        .filter(Student::isPresent).count() + " / " + team.getStudents().size());
+                setCell(row, detailsColumn + 2, team.getRoundTwoStatus());
+                Problem problem = team.getProblem();
+                setCell(row, detailsColumn + 3, problem == null ? "" : problem.getId().toString());
+                setCell(row, detailsColumn + 4, problem == null ? "" : problem.getTitle());
+                setCell(row, detailsColumn + 5, problem == null ? "" : problem.getStatement());
+            }
+
+            for (int i = 0; i < columns.size(); i++) {
+                sheet.autoSizeColumn(i);
+                sheet.setColumnWidth(i, Math.min(sheet.getColumnWidth(i), 12000));
+            }
+            workbook.write(output);
+            return ResponseEntity.ok()
+                    .contentType(MediaType.parseMediaType(
+                            "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"))
+                    .header(HttpHeaders.CONTENT_DISPOSITION, "attachment; filename=\"hackathon-teams.xlsx\"")
+                    .body(output.toByteArray());
+        } catch (IOException exception) {
+            throw new ResponseStatusException(HttpStatus.INTERNAL_SERVER_ERROR,
+                    "Could not generate teams workbook", exception);
+        }
     }
 
     @GetMapping("/admin/teams/{teamId}")
@@ -1533,7 +1601,8 @@ public class HackathonController {
     public record StudentRequest(String name, String registerNumber, String email) {}
     public record SettingsRequest(boolean loginEnabled, String startTime, String endTime, String attendancePassword) {}
     public record RoundAccessSettingsRequest(String activeRound, String startTime, String endTime,
-                                             String deadline, String attendancePassword) {}
+                                             String roundTwoStartTime, String roundTwoEndTime,
+                                             String attendancePassword) {}
     public record AttendanceLoginRequest(String password) {}
     public record AttendanceRequest(Boolean present) {}
     public record AttendanceMemberResponse(Long id, String name, String registerNumber, boolean leader,
@@ -1593,7 +1662,10 @@ public class HackathonController {
         payload.put("enabled", "2".equals(activeRound())
                 && Boolean.parseBoolean(settingValue("round-two-enabled", "false")));
         payload.put("published", roundTwoPublished());
-        payload.put("deadline", localTime(settingValue("round-two-deadline", "")));
+        String roundTwoEnd = settingValue("round-two-end", settingValue("round-two-deadline", ""));
+        payload.put("roundTwoStartTime", localTime(settingValue("round-two-start", "")));
+        payload.put("roundTwoEndTime", localTime(roundTwoEnd));
+        payload.put("deadline", localTime(roundTwoEnd));
         payload.put("open", isRoundTwoOpen());
         return payload;
     }
@@ -1614,9 +1686,11 @@ public class HackathonController {
     private boolean isRoundTwoOpen() {
         if (!"2".equals(activeRound())
                 || !Boolean.parseBoolean(settingValue("round-two-enabled", "false"))) return false;
-        OffsetDateTime deadline = parseOptionalTime(settingValue("round-two-deadline", ""),
-                "Round 2 deadline");
-        return deadline == null || deadline.isAfter(OffsetDateTime.now(ZoneOffset.UTC));
+        OffsetDateTime start = parseOptionalTime(settingValue("round-two-start", ""), "Round 2 start");
+        OffsetDateTime end = parseOptionalTime(
+                settingValue("round-two-end", settingValue("round-two-deadline", "")), "Round 2 end");
+        OffsetDateTime now = OffsetDateTime.now(ZoneOffset.UTC);
+        return (start == null || !now.isBefore(start)) && (end == null || now.isBefore(end));
     }
 
     private void requireRoundTwoOpen() {

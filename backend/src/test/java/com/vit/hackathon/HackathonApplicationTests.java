@@ -1010,13 +1010,21 @@ class HackathonApplicationTests {
         students.saveAndFlush(member);
         settings.save(new com.vit.hackathon.model.AppSetting("login-enabled", "false"));
 
-        mockMvc.perform(put("/api/admin/round-two/settings")
+        OffsetDateTime now = OffsetDateTime.now(ZoneOffset.UTC);
+        String roundTwoStart = now.minusMinutes(1).toString();
+        String roundTwoEnd = now.plusHours(1).toString();
+        mockMvc.perform(put("/api/admin/round-access/settings")
                         .header("X-Admin-Password", ADMIN_PASSWORD)
                         .contentType(MediaType.APPLICATION_JSON)
-                        .content("{\"enabled\":true,\"deadline\":\"2099-10-10T00:00:00Z\"}"))
+                        .content("{\"activeRound\":\"2\",\"startTime\":\"\",\"endTime\":\"\","
+                                + "\"roundTwoStartTime\":\"" + roundTwoStart + "\","
+                                + "\"roundTwoEndTime\":\"" + roundTwoEnd + "\","
+                                + "\"attendancePassword\":\"\"}"))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.open").value(true))
-                .andExpect(jsonPath("$.activeRound").value("2"));
+                .andExpect(jsonPath("$.activeRound").value("2"))
+                .andExpect(jsonPath("$.roundTwoStartTime").exists())
+                .andExpect(jsonPath("$.roundTwoEndTime").exists());
 
         mockMvc.perform(post("/api/student/login")
                         .contentType(MediaType.APPLICATION_JSON)
@@ -1048,13 +1056,63 @@ class HackathonApplicationTests {
                                 "contactNumber", team.getPrimaryContactNumber()))))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.roundTwoOpen").value(true))
-                .andExpect(jsonPath("$.advancedToRoundTwo").value(true));
+                .andExpect(jsonPath("$.advancedToRoundTwo").value(true))
+                .andExpect(jsonPath("$.roundTwoDeadline").exists());
+
+        String futureRoundTwoStart = now.plusHours(1).toString();
+        String futureRoundTwoEnd = now.plusHours(2).toString();
+        mockMvc.perform(put("/api/admin/round-access/settings")
+                        .header("X-Admin-Password", ADMIN_PASSWORD)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"activeRound\":\"2\",\"startTime\":\"\",\"endTime\":\"\","
+                                + "\"roundTwoStartTime\":\"" + futureRoundTwoStart + "\","
+                                + "\"roundTwoEndTime\":\"" + futureRoundTwoEnd + "\","
+                                + "\"attendancePassword\":\"\"}"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.open").value(false));
+        mockMvc.perform(post("/api/student/login")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(new ObjectMapper().writeValueAsString(Map.of(
+                                "email", team.getPrimaryEmail(),
+                                "contactNumber", team.getPrimaryContactNumber()))))
+                .andExpect(status().isForbidden())
+                .andExpect(jsonPath("$.message").value("Round 2 submissions are currently closed"));
+
+        String endedRoundTwoStart = now.minusHours(2).toString();
+        String endedRoundTwoEnd = now.minusHours(1).toString();
+        mockMvc.perform(put("/api/admin/round-access/settings")
+                        .header("X-Admin-Password", ADMIN_PASSWORD)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"activeRound\":\"2\",\"startTime\":\"\",\"endTime\":\"\","
+                                + "\"roundTwoStartTime\":\"" + endedRoundTwoStart + "\","
+                                + "\"roundTwoEndTime\":\"" + endedRoundTwoEnd + "\","
+                                + "\"attendancePassword\":\"\"}"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.open").value(false));
+        mockMvc.perform(post("/api/student/login")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(new ObjectMapper().writeValueAsString(Map.of(
+                                "email", team.getPrimaryEmail(),
+                                "contactNumber", team.getPrimaryContactNumber()))))
+                .andExpect(status().isForbidden())
+                .andExpect(jsonPath("$.message").value("Round 2 submissions are currently closed"));
+
+        mockMvc.perform(put("/api/admin/round-access/settings")
+                        .header("X-Admin-Password", ADMIN_PASSWORD)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"activeRound\":\"2\",\"startTime\":\"\",\"endTime\":\"\","
+                                + "\"roundTwoStartTime\":\"" + futureRoundTwoEnd + "\","
+                                + "\"roundTwoEndTime\":\"" + futureRoundTwoStart + "\","
+                                + "\"attendancePassword\":\"\"}"))
+                .andExpect(status().isBadRequest());
 
         mockMvc.perform(put("/api/admin/round-access/settings")
                         .header("X-Admin-Password", ADMIN_PASSWORD)
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("{\"activeRound\":\"1\",\"startTime\":\"\",\"endTime\":\"\","
-                                + "\"deadline\":\"\",\"attendancePassword\":\"\"}"))
+                                + "\"roundTwoStartTime\":\"" + roundTwoStart + "\","
+                                + "\"roundTwoEndTime\":\"" + roundTwoEnd + "\","
+                                + "\"attendancePassword\":\"\"}"))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.activeRound").value("1"))
                 .andExpect(jsonPath("$.open").value(false));
@@ -1587,6 +1645,66 @@ class HackathonApplicationTests {
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("{\"email\":\"leader@example.com\",\"contactNumber\":\"9876543210\"}"))
                 .andExpect(status().isForbidden());
+    }
+
+    @Test
+    void teamsExportIncludesEveryTeamRegistrationDetailsAndAssignedProblemStatement() throws Exception {
+        Team assignedTeam = createTeam("EXPORT ASSIGNED LEADER", "26MCA9101", "assigned@example.test");
+        Team unassignedTeam = createTeam("EXPORT UNASSIGNED LEADER", "26MCA9102", "unassigned@example.test");
+        Problem problem = new Problem();
+        problem.setTitle("Water reuse dashboard");
+        problem.setStatement("Build a dashboard that tracks water reuse across campus.");
+        problem = problems.saveAndFlush(problem);
+        assignedTeam.setProblem(problem);
+        teams.saveAndFlush(assignedTeam);
+
+        mockMvc.perform(get("/api/admin/teams/export"))
+                .andExpect(status().isBadRequest());
+        mockMvc.perform(get("/api/admin/teams/export")
+                        .header("X-Admin-Password", "wrong-password"))
+                .andExpect(status().isUnauthorized());
+        byte[] exportedWorkbook = mockMvc.perform(get("/api/admin/teams/export")
+                        .header("X-Admin-Password", ADMIN_PASSWORD))
+                .andExpect(status().isOk())
+                .andExpect(content().contentType(
+                        "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"))
+                .andExpect(header().string("Content-Disposition",
+                        org.hamcrest.Matchers.containsString("hackathon-teams.xlsx")))
+                .andReturn()
+                .getResponse()
+                .getContentAsByteArray();
+
+        try (Workbook exportedFile = WorkbookFactory.create(new ByteArrayInputStream(exportedWorkbook))) {
+            Sheet sheet = exportedFile.getSheet("Teams");
+            org.junit.jupiter.api.Assertions.assertEquals(3, sheet.getPhysicalNumberOfRows());
+            Row header = sheet.getRow(0);
+            int memberDetailsColumn = 2 + TeamRegistrationFields.LABELS.size();
+            int problemStatementColumn = memberDetailsColumn + 5;
+            org.junit.jupiter.api.Assertions.assertEquals("Primary Email Id",
+                    header.getCell(13).getStringCellValue());
+            org.junit.jupiter.api.Assertions.assertEquals("Assigned problem statement",
+                    header.getCell(problemStatementColumn).getStringCellValue());
+
+            Map<String, Row> rowsByTeamName = new java.util.HashMap<>();
+            for (int rowIndex = 1; rowIndex <= 2; rowIndex++) {
+                Row row = sheet.getRow(rowIndex);
+                rowsByTeamName.put(row.getCell(1).getStringCellValue(), row);
+            }
+            Row assignedRow = rowsByTeamName.get("Team 001");
+            Row unassignedRow = rowsByTeamName.get("Team 002");
+            org.junit.jupiter.api.Assertions.assertNotNull(assignedRow);
+            org.junit.jupiter.api.Assertions.assertNotNull(unassignedRow);
+            org.junit.jupiter.api.Assertions.assertEquals("team-26mca9101@example.test",
+                    assignedRow.getCell(13).getStringCellValue());
+            org.junit.jupiter.api.Assertions.assertEquals("assigned@example.test",
+                    assignedRow.getCell(3).getStringCellValue());
+            org.junit.jupiter.api.Assertions.assertTrue(
+                    assignedRow.getCell(memberDetailsColumn).getStringCellValue().contains("26MCA9101"));
+            org.junit.jupiter.api.Assertions.assertEquals("Build a dashboard that tracks water reuse across campus.",
+                    assignedRow.getCell(problemStatementColumn).getStringCellValue());
+            org.junit.jupiter.api.Assertions.assertEquals("", unassignedRow.getCell(problemStatementColumn)
+                    .getStringCellValue());
+        }
     }
 
     @Test

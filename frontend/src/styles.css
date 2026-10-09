@@ -149,8 +149,9 @@ body:has(.login-shell) .mode-switch{top:20px;bottom:auto}
 .event-hero{position:relative;isolation:isolate;overflow:hidden;justify-content:center;padding:clamp(42px,6vw,88px) clamp(30px,6vw,92px);background:radial-gradient(ellipse at 3% 94%,#245e43 0,transparent 42%),radial-gradient(ellipse at 88% 9%,#1c4d3b 0,transparent 35%),#0d3026}
 .login-shell{position:relative}
 .login-shell>.mode-switch{position:absolute;top:20px;right:22px;bottom:auto}
-.portal-mode-switches{position:fixed;top:20px;right:22px;display:flex;gap:10px;z-index:10}
+.portal-mode-switches{position:fixed;top:auto;right:22px;bottom:22px;display:flex;gap:10px;z-index:10}
 .portal-mode-switches .mode-switch{position:static}
+body:has(.login-shell) .portal-mode-switches{top:20px;bottom:auto}
 .event-hero:after{position:absolute;z-index:-1;content:"";width:340px;height:340px;right:-190px;bottom:12%;border:1px solid #b5ef6520;border-radius:50%;box-shadow:0 0 0 36px #b5ef6508,0 0 0 72px #b5ef6505}
 .event-host{display:flex;align-items:center;gap:20px;margin-bottom:38px}
 .event-host .login-logo{width:120px;max-width:35%;margin:0;padding-right:20px;border-right:1px solid #ffffff35}
@@ -228,7 +229,7 @@ body:has(.login-shell) .mode-switch{top:20px;bottom:auto}
   .login-shell{grid-template-columns:1fr}
   .event-hero{padding:96px clamp(22px,7vw,54px) 34px}
   body:has(.login-shell) .mode-switch{position:absolute;top:20px;right:14px;bottom:auto}
-  .portal-mode-switches{top:14px;right:14px;gap:7px}
+  .portal-mode-switches{top:auto;right:14px;bottom:calc(14px + env(safe-area-inset-bottom));gap:7px}
   .event-host{margin-bottom:28px}
   .event-hero h1{font-size:clamp(3rem,10vw,4.5rem)}
   .event-login-card{width:min(100% - 36px,520px);margin:0 auto 36px}
@@ -405,7 +406,7 @@ body:has(.login-shell) .mode-switch{top:20px;bottom:auto}
   .event-support-contacts{min-width:0}
 }
 @media(max-width:760px){
-  body:has(.login-shell) .portal-mode-switches{position:fixed;top:calc(12px + env(safe-area-inset-top));right:12px;left:12px;width:auto;justify-content:flex-end;flex-wrap:wrap;gap:6px}
+  body:has(.login-shell) .portal-mode-switches{position:fixed;top:calc(12px + env(safe-area-inset-top));right:12px;bottom:auto;left:12px;width:auto;justify-content:flex-end;flex-wrap:wrap;gap:6px}
   body:has(.login-shell) .portal-mode-switches .mode-switch{position:static;inset:auto;flex:0 1 auto;max-width:100%;padding:10px 12px;font-size:.68rem;line-height:1.2;white-space:normal}
 }
 @media(max-width:520px){
