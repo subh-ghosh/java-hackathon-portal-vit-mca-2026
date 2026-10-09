@@ -480,6 +480,19 @@ function Login({ onLogin, onAdmin }) {
             </article>
           </div>
         </section>
+        <section className="event-support" aria-labelledby="technical-support-title">
+          <div>
+            <span className="eyebrow">WEBSITE HELP?</span>
+            <h3 id="technical-support-title">Technical and website support</h3>
+            <p>For help with the portal or website, contact:</p>
+          </div>
+          <div className="event-support-contacts">
+            <article className="event-support-contact">
+              <h4>Subarta Ghosh</h4>
+              <a href="mailto:subarta.ghosh2025@vitstudent.ac.in">subarta.ghosh2025@vitstudent.ac.in</a>
+            </article>
+          </div>
+        </section>
       </section>
     </main>
   );
