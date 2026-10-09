@@ -10,7 +10,7 @@ Full-stack hackathon management portal built with Spring Boot, React, and Postgr
 - Shared view of every non-empty team registration field for all authenticated team members
 - Shared problem statement for every member of a team
 - Attendance Coordinator check-in with per-participant present/absent status
-- Participant login and submissions require at least one team member to be marked present; participant views show only checked-in members while admin retains the full roster and attendance status
+- Participant login and submissions require at least one team member to be marked present; participant views show only checked-in members and sync automatically, while admin retains the full roster and attendance status
 - Admin-only team, student, problem, and assignment management
 - Admin submission review and Excel export, with double confirmation for bulk clears
 

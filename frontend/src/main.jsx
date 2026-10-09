@@ -140,7 +140,9 @@ async function request(path, options = {}) {
   if (!response.ok) {
     const message = body.message || body.detail || body.title || 'Something went wrong';
     reportRequestError(message);
-    throw new Error(message);
+    const error = new Error(message);
+    error.status = response.status;
+    throw error;
   }
   return body;
 }
@@ -426,7 +428,7 @@ function ProblemStatement({ statement }) {
   );
 }
 
-function Student({ team, credentials, logout, refreshSession }) {
+function Student({ team, credentials, logout, refreshSession, sessionSyncError }) {
   const [links, setLinks] = useState({ googleDriveLink: team.submission?.googleDriveLink || '', githubLink: team.submission?.githubLink || '' });
   const [notice, setNoticeState] = useState('');
   const [noticeType, setNoticeType] = useState('success');
@@ -490,6 +492,7 @@ function Student({ team, credentials, logout, refreshSession }) {
           <h1>{team.name}</h1>
           <p className="muted">Your assigned problem, checked-in team members and final project submission.</p>
         </div>
+        {sessionSyncError && <div className="error" role="alert">{sessionSyncError}</div>}
         <div className="student-event-banner">
           <span><b>OCTOBER 10 &amp; 11, 2026</b><small>Hackathon dates</small></span>
           <span><b>VIT, VELLORE</b><small>Silver Jubilee Tower · Sarojini Naidu Gallery</small></span>
@@ -506,7 +509,7 @@ function Student({ team, credentials, logout, refreshSession }) {
             </div>)}</dl>
             : <div className="empty">No registration details are available for this team.</div>}
           <h3 className="team-members-heading">Present team members</h3>
-          <p className="muted attendance-roster-note">Only members marked present by an Attendance Coordinator appear here. Refresh the roster and challenge after check-in.</p>
+          <p className="muted attendance-roster-note">Only members marked present by an Attendance Coordinator appear here. The roster syncs automatically; refresh the team view to update it now.</p>
           {team.students.length
             ? <div className="members">{team.students.map(s => <div className="member" key={s.registerNumber}><span>{(s.name || s.registerNumber).charAt(0)}</span><div><b>{s.name || 'Name not provided'}</b><small>{s.registerNumber}{s.leader ? ' - Group leader' : ''}</small></div></div>)}</div>
             : <div className="empty">No team members have been marked present yet.</div>}
@@ -685,6 +688,15 @@ function Admin() {
   useEffect(() => {
     if (!authed) setPassword('');
   }, [authed]);
+  useEffect(() => {
+    if (!authed || !password) return undefined;
+    const timer = window.setInterval(() => {
+      request('/admin/teams', { headers: headers() })
+        .then(setTeams)
+        .catch(error => setErrorNotice(error.message));
+    }, 15000);
+    return () => window.clearInterval(timer);
+  }, [authed, password]);
   useEffect(() => {
     if (!authed || !password) return undefined;
     const timer = window.setInterval(() => {
@@ -1189,8 +1201,42 @@ function App() {
   const savedParticipantSession = readSession('hackathon-participant-session');
   const [session, setSession] = useState(savedParticipantSession?.team ? savedParticipantSession : null);
   const [sessionExpired, setSessionExpired] = useState(Boolean(savedParticipantSession?.expired));
-  const logout = () => { clearSession('hackathon-participant-session'); setSession(null); setSessionExpired(false); };
-  const onLogin = (team, credentials) => { saveSession('hackathon-participant-session', { team, credentials }); setSession(readSession('hackathon-participant-session')); setSessionExpired(false); };
+  const [sessionExpiredMessage, setSessionExpiredMessage] = useState(
+    'Your session has expired for security. Please sign in again.'
+  );
+  const [sessionSyncError, setSessionSyncError] = useState('');
+  const logout = () => { clearSession('hackathon-participant-session'); setSession(null); setSessionExpired(false); setSessionSyncError(''); };
+  const onLogin = (team, credentials) => { saveSession('hackathon-participant-session', { team, credentials }); setSession(readSession('hackathon-participant-session')); setSessionExpired(false); setSessionSyncError(''); };
+  useEffect(() => {
+    if (mode !== 'student' || !session?.credentials) return undefined;
+    let active = true;
+    const timer = window.setInterval(async () => {
+      try {
+        const team = await request('/student/login', {
+          method: 'POST',
+          body: JSON.stringify(session.credentials)
+        });
+        if (!active) return;
+        const updatedSession = { ...session, team };
+        saveSession('hackathon-participant-session', updatedSession);
+        setSession(updatedSession);
+        setSessionSyncError('');
+      } catch (error) {
+        if (active && error.status === 403) {
+          clearSession('hackathon-participant-session');
+          setSession(null);
+          setSessionExpiredMessage(error.message);
+          setSessionExpired(true);
+        } else if (active) {
+          setSessionSyncError(`Could not refresh your team status: ${error.message}`);
+        }
+      }
+    }, 15000);
+    return () => {
+      active = false;
+      window.clearInterval(timer);
+    };
+  }, [mode, session?.credentials?.email, session?.credentials?.contactNumber]);
   const refreshParticipantSession = async () => {
     const team = await request('/student/login', {
       method: 'POST',
@@ -1204,7 +1250,7 @@ function App() {
   const openAdmin = () => { logout(); setMode('admin'); };
   const openAttendance = () => { logout(); setMode('attendance'); };
   const openParticipant = () => { logout(); setMode('student'); };
-  return <>{mode === 'admin' ? <Admin /> : mode === 'attendance' ? <AttendanceCoordinator onExit={openParticipant} /> : session ? <Student team={session.team} credentials={session.credentials} logout={logout} refreshSession={refreshParticipantSession} /> : <Login onLogin={onLogin} onAdmin={openAdmin} />}{mode === 'student' && sessionExpired && <div className="session-expired"><div className="card"><h2>Participant session expired</h2><p>Your session has expired for security. Please sign in again.</p><button onClick={logout}>Sign out</button></div></div>}{(mode === 'admin' || mode === 'attendance' || session) && <div className="portal-mode-switches">{mode === 'admin' && <button className="mode-switch" onClick={openAttendance}>Attendance Coordinator</button>}<button className="mode-switch" onClick={openParticipant}>Participant login</button></div>}</>;
+  return <>{mode === 'admin' ? <Admin /> : mode === 'attendance' ? <AttendanceCoordinator onExit={openParticipant} /> : session ? <Student team={session.team} credentials={session.credentials} logout={logout} refreshSession={refreshParticipantSession} sessionSyncError={sessionSyncError} /> : <Login onLogin={onLogin} onAdmin={openAdmin} />}{mode === 'student' && sessionExpired && <div className="session-expired"><div className="card"><h2>Participant access updated</h2><p>{sessionExpiredMessage}</p><button onClick={logout}>Back to login</button></div></div>}{(mode === 'admin' || mode === 'attendance' || session) && <div className="portal-mode-switches">{mode === 'admin' && <button className="mode-switch" onClick={openAttendance}>Attendance Coordinator</button>}<button className="mode-switch" onClick={openParticipant}>Participant login</button></div>}</>;
 }
 
 createRoot(document.getElementById('root')).render(<App />);
