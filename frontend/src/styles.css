@@ -250,6 +250,18 @@ body:has(.login-shell) .mode-switch{top:20px;bottom:auto}
   .event-login-card{padding:25px 21px}
 }
 .event-details{grid-column:1/-1;padding:clamp(32px,6vw,76px) clamp(20px,7vw,96px);background:#f3f6f1;color:#17221b}
+
+.problem-statement{color:#53645a;font-size:.9rem;line-height:1.75;overflow-wrap:anywhere}
+.problem-statement p{margin:0 0 14px;white-space:pre-wrap}
+.problem-statement p:first-child{color:#3e5947;font-weight:600}
+.problem-statement ol{display:grid;gap:10px;margin:16px 0;padding-left:1.8rem}
+.problem-statement li{padding-left:5px}
+.problem-statement li::marker{color:#4d8056;font-weight:800}
+.problem-statement li strong{color:#263d2d}
+.problem-statement h3{margin:24px 0 10px;color:#263d2d;font-size:.85rem;letter-spacing:.04em}
+.problem-card .problem-statement h3{margin-top:24px;text-transform:none}
+.problem-row .problem-statement{max-width:860px;font-size:.8rem}
+.problem-row .problem-statement p{margin-bottom:9px}
 .event-details-heading{max-width:920px;margin:0 auto 28px}
 .event-details-heading .eyebrow{color:#4d795a}
 .event-details-heading h2{max-width:860px;margin:12px 0;font-size:clamp(1.7rem,3.7vw,3rem);line-height:1.08;letter-spacing:-.055em}
