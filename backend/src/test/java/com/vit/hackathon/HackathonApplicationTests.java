@@ -842,7 +842,7 @@ class HackathonApplicationTests {
     }
 
     @Test
-    void roundTwoReusesRoundOneProblemAndWorksWithoutAttendance() throws Exception {
+    void roundTwoReusesRoundOneProblemAndSharesAttendanceWithRoundOne() throws Exception {
         Team team = createTeam("ROUND TWO LEADER", "26MCA9981", "round-two@example.test");
         Student presentMember = team.getStudents().get(0);
         presentMember.setPresent(true);
@@ -902,6 +902,24 @@ class HackathonApplicationTests {
         mockMvc.perform(put("/api/student/round-two/submission")
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(roundTwoLinks))
+                .andExpect(status().isForbidden())
+                .andExpect(jsonPath("$.message").value(
+                        org.hamcrest.Matchers.containsString("No team members are checked in")));
+
+        mockMvc.perform(post("/api/student/login")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(new ObjectMapper().writeValueAsString(Map.of(
+                                "email", team.getPrimaryEmail(),
+                                "contactNumber", team.getPrimaryContactNumber()))))
+                .andExpect(status().isForbidden())
+                .andExpect(jsonPath("$.message").value(
+                        org.hamcrest.Matchers.containsString("No team members are checked in")));
+
+        presentMember.setPresent(true);
+        students.saveAndFlush(presentMember);
+        mockMvc.perform(put("/api/student/round-two/submission")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(roundTwoLinks))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.googleDriveLink").value(roundTwoDrive));
 
@@ -914,7 +932,7 @@ class HackathonApplicationTests {
                 .andExpect(jsonPath("$.problem.id").value(roundOneProblem.getId()))
                 .andExpect(jsonPath("$.submission.googleDriveLink").value(roundOneDrive))
                 .andExpect(jsonPath("$.students.length()").value(1))
-                .andExpect(jsonPath("$.students[0].present").value(false))
+                .andExpect(jsonPath("$.students[0].present").value(true))
                 .andExpect(jsonPath("$.roundTwoProblem.id").value(roundOneProblem.getId()))
                 .andExpect(jsonPath("$.roundTwoSubmission.googleDriveLink").value(roundTwoDrive))
                 .andExpect(jsonPath("$.roundTwoStatus").value("advanced"))

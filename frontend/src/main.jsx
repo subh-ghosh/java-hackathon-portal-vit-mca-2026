@@ -143,7 +143,7 @@ function RoundTwoManagement({ settings, onSettingsChange, onSave, teams, onSetSt
           <div><span className="eyebrow">ROUND 2 TEAM SELECTION</span><h2>Advance teams to continue their challenges</h2></div>
           <span className="pill">{teams.filter(team => team.advancedToRoundTwo).length} advanced</span>
         </div>
-        <p className="muted round-two-help">Qualification applies to the whole team. Each advancing team continues with its existing Round 1 problem statement; Round 1 submissions remain unchanged.</p>
+        <p className="muted round-two-help">Qualification applies to the whole team. Advancing teams continue with their existing Round 1 problem statement and the same shared attendance check-in; Round 1 submissions remain unchanged.</p>
         <div className="table-wrap">
           <table>
             <thead><tr><th>Team</th><th>Round 2 status</th><th>Continued problem statement</th></tr></thead>
@@ -630,15 +630,11 @@ function Student({ team, credentials, logout, refreshSession, sessionSyncError }
               <dt>{field.fieldName}</dt><dd>{field.fieldValue}</dd>
             </div>)}</dl>
             : <div className="empty">No registration details are available for this team.</div>}
-          <h3 className="team-members-heading">{team.roundTwoPublished ? 'Team members' : 'Present team members'}</h3>
-          <p className="muted attendance-roster-note">{team.roundTwoPublished
-            ? 'Attendance check-in is not required for Round 2. The full team roster is shown below.'
-            : 'Only members marked present by an Attendance Coordinator appear here. The roster syncs automatically; refresh the team view to update it now.'}</p>
+          <h3 className="team-members-heading">Present team members</h3>
+          <p className="muted attendance-roster-note">The same attendance check-in applies to Round 1 and Round 2. Only members marked present by an Attendance Coordinator appear here; the roster syncs automatically.</p>
           {team.students.length
             ? <div className="members">{team.students.map(s => <div className="member" key={s.registerNumber}><span>{(s.name || s.registerNumber).charAt(0)}</span><div><b>{s.name || 'Name not provided'}</b><small>{s.registerNumber}{s.leader ? ' - Group leader' : ''}</small></div></div>)}</div>
-            : <div className="empty">{team.roundTwoPublished
-              ? 'No team members are listed for this team.'
-              : 'No team members have been marked present yet.'}</div>}
+            : <div className="empty">No team members have been marked present yet.</div>}
         </section>
         <div className="student-grid">
           <section className="card problem-card">

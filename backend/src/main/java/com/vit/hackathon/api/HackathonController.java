@@ -118,7 +118,7 @@ public class HackathonController {
         if (!roundTwoPublished || Boolean.parseBoolean(settingValue("login-paused", "false"))) {
             enforceLoginWindow();
         }
-        Team team = authenticateTeam(request.email(), request.contactNumber(), !roundTwoPublished);
+        Team team = authenticateTeam(request.email(), request.contactNumber());
         ensureTeamNumber(team);
         String leaderRegisterNumber = team.getStudents().stream()
                 .filter(Student::isPresent)
@@ -128,7 +128,7 @@ public class HackathonController {
                 .orElse(null);
         Problem visibleProblem = team.getProblem() != null && team.getProblem().isEnabled() ? team.getProblem() : null;
         return new StudentTeamResponse(team.getName(), team.getTeamNumber(), leaderRegisterNumber, visibleProblem,
-                roundTwoPublished ? team.getStudents() : team.getStudents().stream().filter(Student::isPresent).toList(),
+                team.getStudents().stream().filter(Student::isPresent).toList(),
                 submissions.findByTeamId(team.getId()).orElse(null), team.getImportedFields(),
                 team.isAdvancedToRoundTwo(), roundTwoPublished && team.isAdvancedToRoundTwo()
                         ? team.getProblem() : null,
@@ -356,7 +356,7 @@ public class HackathonController {
         if (request == null) {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Round 2 submission links are required");
         }
-        Team authenticatedTeam = authenticateTeam(request.email(), request.contactNumber(), false);
+        Team authenticatedTeam = authenticateTeam(request.email(), request.contactNumber());
         requireParticipantNotPaused();
         requireRoundTwoOpen();
         if (!authenticatedTeam.isAdvancedToRoundTwo()) {
@@ -1290,10 +1290,6 @@ public class HackathonController {
     }
 
     private Team authenticateTeam(String email, String contactNumber) {
-        return authenticateTeam(email, contactNumber, true);
-    }
-
-    private Team authenticateTeam(String email, String contactNumber, boolean requirePresentMember) {
         String identity = normalizeTeamUsername(email);
         String normalizedContactNumber = normalizeContactNumber(contactNumber);
         if (identity.isBlank() || normalizedContactNumber.isBlank()) {
@@ -1312,7 +1308,7 @@ public class HackathonController {
         }
         attemptLimiter.participantSucceeded(identity, normalizedContactNumber);
         Team team = matches.get(0);
-        if (requirePresentMember && team.getStudents().stream().noneMatch(Student::isPresent)) {
+        if (team.getStudents().stream().noneMatch(Student::isPresent)) {
             throw new ResponseStatusException(HttpStatus.FORBIDDEN,
                     "No team members are checked in. Ask the Attendance Coordinator to mark at least one member present.");
         }
