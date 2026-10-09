@@ -416,6 +416,7 @@ function Student({ team, credentials, logout, refreshSession }) {
     finally { setSubmitting(false); }
   }
   const registrationDetails = (team.importedFields || [])
+    .filter(field => ![2, 3, 4, 5, 6, 7, 8, 9].includes(field.columnIndex))
     .filter(field => String(field.fieldValue ?? '').trim());
   return (
     <main className="app-shell">
@@ -428,11 +429,6 @@ function Student({ team, credentials, logout, refreshSession }) {
           <span className="eyebrow">GREENOPS · TEAM SPACE</span>
           <h1>{team.name}</h1>
           <p className="muted">Your assigned problem, team roster and final project submission.</p>
-          <div className="student-summary">
-            <span><small>TEAM NUMBER</small><b>#{team.teamNumber}</b></span>
-            <span><small>TEAM MEMBERS</small><b>{team.students.length}</b></span>
-            <span><small>GROUP LEADER</small><b>{team.leaderRegisterNumber || 'Not assigned'}</b></span>
-          </div>
         </div>
         <div className="student-event-banner">
           <span><b>OCTOBER 10 &amp; 11, 2026</b><small>Hackathon dates</small></span>
