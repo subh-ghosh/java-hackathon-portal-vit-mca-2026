@@ -628,14 +628,24 @@ function Student({ team, credentials, logout, refreshSession, sessionSyncError }
             {team.problem ? <><h2>{team.problem.title}</h2><ProblemStatement statement={team.problem.statement} /></> : <div className="empty">No published challenge is available. If the coordinator just assigned one, refresh here; the problem must also be enabled before participants can view it.</div>}
             {challengeNotice && <div className={challengeNoticeType} role={challengeNoticeType === 'error' ? 'alert' : 'status'}>{challengeNotice}</div>}
           </section>
-          <form className="card submission-card" onSubmit={submit}>
-            <span className="eyebrow">GREENOPS · FINAL ENTRY</span>
-            <h2>Submit your project</h2>
+          <form className="card submission-card" onSubmit={team.roundTwoOpen ? submitRoundTwo : submit}>
+            <span className="eyebrow">GREENOPS · ROUND {team.roundTwoOpen ? '2' : '1'} ENTRY</span>
+            <h2>{team.roundTwoOpen ? 'Submit your Round 2 project' : 'Submit your Round 1 project'}</h2>
             <p className="muted">Any team member using the shared team login can submit or update these links. Both links should be ready for the jury to review.</p>
-            <label>Project document (Google Drive)<input required type="url" value={links.googleDriveLink} onChange={e => setLinks({ ...links, googleDriveLink: e.target.value })} /></label>
-            <label>Source code (GitHub repository)<input required type="url" value={links.githubLink} onChange={e => setLinks({ ...links, githubLink: e.target.value })} /></label>
-            {notice && <div className={noticeType} role={noticeType === 'error' ? 'alert' : 'status'}>{notice}</div>}
-            <button disabled={submitting}>{submitting ? 'Saving project links…' : team.submission ? 'Update project submission' : 'Submit project links'}</button>
+            <label>Project document (Google Drive)<input required type="url" value={team.roundTwoOpen ? roundTwoLinks.googleDriveLink : links.googleDriveLink} onChange={event => team.roundTwoOpen
+              ? setRoundTwoLinks(current => ({ ...current, googleDriveLink: event.target.value }))
+              : setLinks(current => ({ ...current, googleDriveLink: event.target.value }))} /></label>
+            <label>Source code (GitHub repository)<input required type="url" value={team.roundTwoOpen ? roundTwoLinks.githubLink : links.githubLink} onChange={event => team.roundTwoOpen
+              ? setRoundTwoLinks(current => ({ ...current, githubLink: event.target.value }))
+              : setLinks(current => ({ ...current, githubLink: event.target.value }))} /></label>
+            {team.roundTwoOpen
+              ? roundTwoNotice && <div className={roundTwoNoticeType} role={roundTwoNoticeType === 'error' ? 'alert' : 'status'}>{roundTwoNotice}</div>
+              : notice && <div className={noticeType} role={noticeType === 'error' ? 'alert' : 'status'}>{notice}</div>}
+            <button disabled={team.roundTwoOpen ? roundTwoSubmitting : submitting}>
+              {team.roundTwoOpen
+                ? roundTwoSubmitting ? 'Saving Round 2 links…' : roundTwoSubmission ? 'Update Round 2 submission' : 'Submit Round 2 links'
+                : submitting ? 'Saving project links…' : team.submission ? 'Update Round 1 submission' : 'Submit Round 1 links'}
+            </button>
           </form>
         </div>
         {team.roundTwoOpen && <section className="card round-two-student">
@@ -661,13 +671,6 @@ function Student({ team, credentials, logout, refreshSession, sessionSyncError }
           {team.advancedToRoundTwo && team.roundTwoDeadline && <p className="muted round-two-deadline">
             Submission deadline: {new Date(team.roundTwoDeadline).toLocaleString()}
           </p>}
-          {team.advancedToRoundTwo && team.roundTwoOpen && team.problem && <form className="round-two-submission" onSubmit={submitRoundTwo}>
-            <span className="eyebrow">ROUND 2 · SUBMISSION</span>
-            <label>Round 2 project document (Google Drive)<input required type="url" value={roundTwoLinks.googleDriveLink} onChange={event => setRoundTwoLinks(current => ({ ...current, googleDriveLink: event.target.value }))} /></label>
-            <label>Round 2 source code (GitHub repository)<input required type="url" value={roundTwoLinks.githubLink} onChange={event => setRoundTwoLinks(current => ({ ...current, githubLink: event.target.value }))} /></label>
-            {roundTwoNotice && <div className={roundTwoNoticeType} role={roundTwoNoticeType === 'error' ? 'alert' : 'status'}>{roundTwoNotice}</div>}
-            <button disabled={roundTwoSubmitting}>{roundTwoSubmitting ? 'Saving Round 2 links…' : roundTwoSubmission ? 'Update Round 2 submission' : 'Submit Round 2 links'}</button>
-          </form>}
         </section>}
       </div>
     </main>
