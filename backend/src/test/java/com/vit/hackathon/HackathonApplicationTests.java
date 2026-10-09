@@ -717,9 +717,11 @@ class HackathonApplicationTests {
         fields.get(1).setFieldValue(username);
         fields.get(2).setFieldValue(leaderName);
         fields.get(3).setFieldValue(leaderRegister);
-        fields.get(10).setFieldValue("9876543210");
         String normalizedRegister = leaderRegister == null ? "unknown"
                 : leaderRegister.trim().toLowerCase(java.util.Locale.ROOT);
+        String contactSuffix = String.format("%05d",
+                Math.floorMod(normalizedRegister.hashCode(), 100_000));
+        fields.get(10).setFieldValue("98765" + contactSuffix);
         fields.get(11).setFieldValue("team-" + normalizedRegister + "@example.test");
         return fields;
     }
@@ -780,6 +782,8 @@ class HackathonApplicationTests {
     void teamImportRejectsDuplicateTeamEmailsAndAllowsDistinctEmails() throws Exception {
         List<String> firstRow = teamRow("SAME PERSON", "26MCA9301", "shared-user@example.test");
         List<String> secondRow = teamRow("SAME PERSON", "26mca9301", "shared-user@example.test");
+        firstRow.set(10, "9876543210");
+        secondRow.set(10, "+98 7654 3210");
 
         mockMvc.perform(multipart("/api/admin/teams/import")
                         .file(csvUploadRows(TeamRegistrationFields.LABELS, List.of(firstRow, secondRow)))
@@ -793,6 +797,7 @@ class HackathonApplicationTests {
         org.junit.jupiter.api.Assertions.assertEquals(0, students.count());
 
         List<String> thirdRow = teamRow("SAME PERSON", "26MCA9302", "shared-user@example.test");
+        thirdRow.set(11, "distinct-user@example.test");
         mockMvc.perform(multipart("/api/admin/teams/import")
                         .file(csvUploadRows(TeamRegistrationFields.LABELS, List.of(firstRow, thirdRow)))
                         .header("X-Admin-Password", ADMIN_PASSWORD))
@@ -811,6 +816,95 @@ class HackathonApplicationTests {
                 .andExpect(jsonPath("$[0].students[0].registerNumber").value("26MCA9301"));
         org.junit.jupiter.api.Assertions.assertEquals(3, teams.count());
         org.junit.jupiter.api.Assertions.assertEquals(3, students.count());
+    }
+
+    @Test
+    void teamImportRejectsDuplicateContactNumbersWithinUploadAndAgainstExistingTeams() throws Exception {
+        List<String> firstRow = teamRow("FIRST TEAM", "26MCA9351", "first-team@example.test");
+        List<String> secondRow = teamRow("SECOND TEAM", "26MCA9352", "second-team@example.test");
+        firstRow.set(10, "9876543210");
+        secondRow.set(10, "+98 7654 3210");
+
+        mockMvc.perform(multipart("/api/admin/teams/import")
+                        .file(csvUploadRows(TeamRegistrationFields.LABELS, List.of(firstRow, secondRow)))
+                        .header("X-Admin-Password", ADMIN_PASSWORD))
+                .andExpect(status().isConflict())
+                .andExpect(jsonPath("$.message").value(org.hamcrest.Matchers.allOf(
+                        org.hamcrest.Matchers.containsString("contact number appears more than once"),
+                        org.hamcrest.Matchers.containsString("CSV rows 2 and 3"),
+                        org.hamcrest.Matchers.containsString("unique contact number"))));
+        org.junit.jupiter.api.Assertions.assertEquals(0, teams.count());
+
+        firstRow.set(10, "9876543210");
+        mockMvc.perform(multipart("/api/admin/teams/import")
+                        .file(csvUpload(TeamRegistrationFields.LABELS, firstRow))
+                        .header("X-Admin-Password", ADMIN_PASSWORD))
+                .andExpect(status().isOk());
+
+        secondRow.set(10, "98-7654-3210");
+        mockMvc.perform(multipart("/api/admin/teams/import")
+                        .file(csvUpload(TeamRegistrationFields.LABELS, secondRow))
+                        .header("X-Admin-Password", ADMIN_PASSWORD))
+                .andExpect(status().isConflict())
+                .andExpect(jsonPath("$.message").value(org.hamcrest.Matchers.allOf(
+                        org.hamcrest.Matchers.containsString("contact number is already assigned"),
+                        org.hamcrest.Matchers.containsString("CSV row 2"))));
+        org.junit.jupiter.api.Assertions.assertEquals(1, teams.count());
+    }
+
+    @Test
+    void manualTeamCreationAndRegistrationEditsRequireUniqueEmailAndContactNumber() throws Exception {
+        Team firstTeam = createTeam("FIRST TEAM", "26MCA9361", "first-team@example.test");
+        List<ImportedTeamField> fields = teamFields("SECOND TEAM", "26MCA9362", "second-team");
+        fields.get(10).setFieldValue("+" + firstTeam.getPrimaryContactNumber());
+        fields.get(11).setFieldValue("second-team@example.test");
+        mockMvc.perform(post("/api/admin/teams")
+                        .header("X-Admin-Password", ADMIN_PASSWORD)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(new ObjectMapper().writeValueAsString(Map.of("importedFields", fields))))
+                .andExpect(status().isConflict())
+                .andExpect(jsonPath("$.message").value(
+                        org.hamcrest.Matchers.containsString("unique contact number")));
+        org.junit.jupiter.api.Assertions.assertEquals(1, teams.count());
+
+        fields.get(10).setFieldValue("9876543999");
+        fields.get(11).setFieldValue(firstTeam.getPrimaryEmail().toUpperCase(java.util.Locale.ROOT));
+        mockMvc.perform(post("/api/admin/teams")
+                        .header("X-Admin-Password", ADMIN_PASSWORD)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(new ObjectMapper().writeValueAsString(Map.of("importedFields", fields))))
+                .andExpect(status().isConflict())
+                .andExpect(jsonPath("$.message").value(org.hamcrest.Matchers.containsString("unique email")));
+        org.junit.jupiter.api.Assertions.assertEquals(1, teams.count());
+
+        Team secondTeam = createTeam("SECOND TEAM", "26MCA9362", "second-team@example.test");
+        List<ImportedTeamField> updatedFields = secondTeam.getImportedFields();
+        updatedFields.get(10).setFieldValue("+" + firstTeam.getPrimaryContactNumber());
+        mockMvc.perform(put("/api/admin/teams/{teamId}/imported-fields", secondTeam.getId())
+                        .header("X-Admin-Password", ADMIN_PASSWORD)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(new ObjectMapper().writeValueAsString(Map.of("fields", updatedFields))))
+                .andExpect(status().isConflict())
+                .andExpect(jsonPath("$.message").value(org.hamcrest.Matchers.containsString("unique contact number")));
+
+        updatedFields.get(10).setFieldValue(secondTeam.getPrimaryContactNumber());
+        updatedFields.get(11).setFieldValue(firstTeam.getPrimaryEmail().toUpperCase(java.util.Locale.ROOT));
+        mockMvc.perform(put("/api/admin/teams/{teamId}/imported-fields", secondTeam.getId())
+                        .header("X-Admin-Password", ADMIN_PASSWORD)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(new ObjectMapper().writeValueAsString(Map.of("fields", updatedFields))))
+                .andExpect(status().isConflict())
+                .andExpect(jsonPath("$.message").value(org.hamcrest.Matchers.containsString("unique email")));
+        org.junit.jupiter.api.Assertions.assertEquals(2, teams.count());
+
+        updatedFields.get(10).setFieldValue(secondTeam.getPrimaryContactNumber());
+        updatedFields.get(11).setFieldValue(secondTeam.getPrimaryEmail());
+        mockMvc.perform(put("/api/admin/teams/{teamId}/imported-fields", secondTeam.getId())
+                        .header("X-Admin-Password", ADMIN_PASSWORD)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(new ObjectMapper().writeValueAsString(Map.of("fields", updatedFields))))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.id").value(secondTeam.getId()));
     }
 
     @Test

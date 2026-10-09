@@ -736,6 +736,17 @@ function Admin() {
       setTeamCreateError('Primary contact number and primary email are required.');
       return;
     }
+    const normalizedContact = primaryContact.replace(/\D/g, '');
+    const duplicateContact = teams.some(team => (team.primaryContactNumber || '').replace(/\D/g, '') === normalizedContact);
+    if (duplicateContact) {
+      setTeamCreateError('This primary contact number is already assigned to another team.');
+      return;
+    }
+    const duplicateEmail = teams.some(team => (team.primaryEmail || '').trim().toLowerCase() === primaryEmail.toLowerCase());
+    if (duplicateEmail) {
+      setTeamCreateError('This primary email is already assigned to another team.');
+      return;
+    }
     if (Boolean(newTeamFields[2].fieldValue.trim()) !== Boolean(newTeamFields[3].fieldValue.trim())) {
       setTeamCreateError('Enter both the group leader’s name and register number, or leave both blank.');
       return;

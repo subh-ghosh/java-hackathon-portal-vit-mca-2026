@@ -491,6 +491,7 @@ public class HackathonController {
                     "A valid primary email is required for team login");
         }
         requirePrimaryContactNumber(importedFieldValue(fields, 10));
+        ensureTeamContactNumberAvailable(importedFieldValue(fields, 10), null, null);
         ensureTeamEmailAvailable(teamEmail, null, null);
         Set<String> participantNumbers = new HashSet<>();
         for (ImportedParticipant participant : participants) {
@@ -561,6 +562,16 @@ public class HackathonController {
             List<Team> imported = new ArrayList<>();
             Map<LoginIdentity, Integer> importedLoginRows = new HashMap<>();
             Map<String, Integer> importedTeamEmails = new HashMap<>();
+            Map<String, Integer> importedTeamContacts = new HashMap<>();
+            List<Team> existingTeams = teams.findAll();
+            Set<String> existingTeamEmails = existingTeams.stream()
+                    .map(team -> normalizeTeamUsername(team.getPrimaryEmail()))
+                    .filter(email -> !email.isBlank())
+                    .collect(java.util.stream.Collectors.toSet());
+            Set<String> existingTeamContacts = existingTeams.stream()
+                    .map(team -> normalizeContactNumber(team.getPrimaryContactNumber()))
+                    .filter(contact -> !contact.isBlank())
+                    .collect(java.util.stream.Collectors.toSet());
             for (int recordIndex = 1; recordIndex < records.size(); recordIndex++) {
                 List<String> values = records.get(recordIndex);
                 int rowNumber = recordIndex + 1;
@@ -584,7 +595,25 @@ public class HackathonController {
                             "The primary email appears more than once in the upload (CSV rows "
                                     + previousEmailRow + " and " + rowNumber + "). Each team must have a unique email.");
                 }
-                ensureTeamEmailAvailable(teamEmail, null, rowNumber);
+                if (!existingTeamEmails.add(teamEmail)) {
+                    throw new ResponseStatusException(HttpStatus.CONFLICT,
+                            "The primary email is already assigned to another team on CSV row " + rowNumber
+                                    + ". Each team must use a unique email.");
+                }
+                String teamContact = importedFieldValue(importedFields, 10);
+                String normalizedTeamContact = normalizeContactNumber(teamContact);
+                Integer previousContactRow = importedTeamContacts.putIfAbsent(normalizedTeamContact, rowNumber);
+                if (previousContactRow != null) {
+                    throw new ResponseStatusException(HttpStatus.CONFLICT,
+                            "The primary contact number appears more than once in the upload (CSV rows "
+                                    + previousContactRow + " and " + rowNumber
+                                    + "). Each team must have a unique contact number.");
+                }
+                if (!existingTeamContacts.add(normalizedTeamContact)) {
+                    throw new ResponseStatusException(HttpStatus.CONFLICT,
+                            "The primary contact number is already assigned to another team on CSV row " + rowNumber
+                                    + ". Each team must use a unique contact number.");
+                }
                 if (importedFields.stream().anyMatch(this::isInvalidImportedField)) {
                     throw new ResponseStatusException(HttpStatus.BAD_REQUEST,
                             "A team field exceeds its allowed length on CSV row " + rowNumber);
@@ -727,6 +756,7 @@ public class HackathonController {
                     "A valid primary email is required for team login");
         }
         requirePrimaryContactNumber(importedFieldValue(fields, 10));
+        ensureTeamContactNumberAvailable(importedFieldValue(fields, 10), team.getId(), null);
         ensureTeamEmailAvailable(teamEmail, team.getId(), null);
 
         Set<String> registerNumbers = new HashSet<>();
@@ -1182,6 +1212,21 @@ public class HackathonController {
                     throw new ResponseStatusException(HttpStatus.CONFLICT,
                             "The primary email is already assigned to another team" + rowMessage
                                     + ". Each team must use a unique email.");
+                });
+    }
+
+    private void ensureTeamContactNumberAvailable(String contactNumber, Long exceptTeamId, Integer csvRow) {
+        String normalizedContactNumber = normalizeContactNumber(contactNumber);
+        teams.findAll().stream()
+                .filter(existing -> !Objects.equals(existing.getId(), exceptTeamId))
+                .filter(existing -> normalizeContactNumber(existing.getPrimaryContactNumber())
+                        .equals(normalizedContactNumber))
+                .findFirst()
+                .ifPresent(existing -> {
+                    String rowMessage = csvRow == null ? "" : " on CSV row " + csvRow;
+                    throw new ResponseStatusException(HttpStatus.CONFLICT,
+                            "The primary contact number is already assigned to another team" + rowMessage
+                                    + ". Each team must use a unique contact number.");
                 });
     }
 
