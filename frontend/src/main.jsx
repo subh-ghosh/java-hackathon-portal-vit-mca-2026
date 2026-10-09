@@ -480,6 +480,7 @@ function Login({ onLogin, onAdmin }) {
             </article>
             <article className="event-support-contact">
               <h4>Technical and website support · Subarta Ghosh</h4>
+              <a href="tel:+917319591361">+91 73195 91361</a>
               <a href="mailto:subarta.ghosh2025@vitstudent.ac.in">subarta.ghosh2025@vitstudent.ac.in</a>
             </article>
           </div>
