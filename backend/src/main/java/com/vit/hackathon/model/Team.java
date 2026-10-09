@@ -22,6 +22,16 @@ public class Team {
     @JoinColumn(name = "problem_id", foreignKey = @ForeignKey(name = "fk_teams_problem"))
     private Problem problem;
 
+    @ManyToOne(fetch = FetchType.EAGER)
+    @JoinColumn(name = "round_two_problem_id", foreignKey = @ForeignKey(name = "fk_teams_round_two_problem"))
+    private Problem roundTwoProblem;
+
+    @Column(name = "advanced_to_round_two")
+    private Boolean advancedToRoundTwo;
+
+    @OneToOne(mappedBy = "team", cascade = CascadeType.ALL, orphanRemoval = true, fetch = FetchType.LAZY)
+    private RoundTwoSubmission roundTwoSubmission;
+
     @OneToMany(mappedBy = "team", cascade = CascadeType.ALL, orphanRemoval = true, fetch = FetchType.EAGER)
     private List<Student> students = new ArrayList<>();
 
@@ -89,6 +99,21 @@ public class Team {
     public void setTeamNumber(Integer teamNumber) { this.teamNumber = teamNumber; }
     public Problem getProblem() { return problem; }
     public void setProblem(Problem problem) { this.problem = problem; }
+    public Problem getRoundTwoProblem() { return roundTwoProblem; }
+    public void setRoundTwoProblem(Problem roundTwoProblem) { this.roundTwoProblem = roundTwoProblem; }
+    public boolean isAdvancedToRoundTwo() { return Boolean.TRUE.equals(advancedToRoundTwo); }
+    public String getRoundTwoStatus() {
+        if (advancedToRoundTwo == null) return "pending";
+        return advancedToRoundTwo ? "advanced" : "not_advanced";
+    }
+    public void setRoundTwoStatus(String roundTwoStatus) {
+        this.advancedToRoundTwo = switch (roundTwoStatus) {
+            case "pending" -> null;
+            case "advanced" -> true;
+            case "not_advanced" -> false;
+            default -> throw new IllegalArgumentException("Invalid Round 2 qualification status");
+        };
+    }
     public List<Student> getStudents() { return students; }
     public String getRegistrationTimestamp() { return registrationTimestamp; }
     public String getRegistrationUsername() { return registrationUsername; }
