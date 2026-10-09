@@ -1,9 +1,10 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { createRoot } from 'react-dom/client';
 import './styles.css';
 
 const API = import.meta.env.VITE_API_URL || 'https://vit-hackathon-api.onrender.com/api';
 const SESSION_TTL = 8 * 60 * 60 * 1000;
+const ATTENDANCE_SYNC_INTERVAL_MS = 3000;
 
 function toLocalDateTimeInput(value) {
   if (!value) return '';
@@ -1095,10 +1096,24 @@ function AttendanceCoordinator({ onExit }) {
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
   const [updatingStudentId, setUpdatingStudentId] = useState(null);
+  const [lastSyncedAt, setLastSyncedAt] = useState(null);
+  const attendanceRevision = useRef(0);
+  const attendanceRefreshInFlight = useRef(false);
 
   async function loadAttendance() {
-    const loadedTeams = await request('/attendance/teams', { headers: { 'X-Attendance-Password': password } });
-    setTeams(loadedTeams);
+    if (attendanceRefreshInFlight.current) return;
+    attendanceRefreshInFlight.current = true;
+    const revision = attendanceRevision.current;
+    try {
+      const loadedTeams = await request('/attendance/teams', { headers: { 'X-Attendance-Password': password } });
+      if (revision === attendanceRevision.current) {
+        setTeams(loadedTeams);
+        setLastSyncedAt(Date.now());
+        setError('');
+      }
+    } finally {
+      attendanceRefreshInFlight.current = false;
+    }
   }
 
   async function signIn(event) {
@@ -1106,7 +1121,10 @@ function AttendanceCoordinator({ onExit }) {
     setLoading(true);
     setError('');
     try {
-      setTeams(await request('/attendance/login', { method: 'POST', body: JSON.stringify({ password }) }));
+      const loadedTeams = await request('/attendance/login', { method: 'POST', body: JSON.stringify({ password }) });
+      attendanceRevision.current += 1;
+      setTeams(loadedTeams);
+      setLastSyncedAt(Date.now());
       setAuthenticated(true);
     } catch (requestError) {
       setError(requestError.message);
@@ -1124,10 +1142,12 @@ function AttendanceCoordinator({ onExit }) {
         headers: { 'X-Attendance-Password': password },
         body: JSON.stringify({ present: !student.present })
       });
+      attendanceRevision.current += 1;
       setTeams(current => current.map(team => ({
         ...team,
         students: team.students.map(member => member.id === updated.id ? updated : member)
       })));
+      setLastSyncedAt(Date.now());
     } catch (requestError) {
       setError(requestError.message);
     } finally {
@@ -1139,7 +1159,7 @@ function AttendanceCoordinator({ onExit }) {
     if (!authenticated) return undefined;
     const timer = window.setInterval(() => {
       loadAttendance().catch(requestError => setError(requestError.message));
-    }, 15000);
+    }, ATTENDANCE_SYNC_INTERVAL_MS);
     return () => window.clearInterval(timer);
   }, [authenticated, password]);
 
@@ -1174,7 +1194,7 @@ function AttendanceCoordinator({ onExit }) {
   return <main className="app-shell">
     <header><div className="brand"><img src="/vit-logo-transparent.png" alt="Vellore Institute of Technology" /><span>GREENOPS</span></div><div className="header-actions"><span className="session-label">Attendance session active</span><button className="ghost" onClick={signOut}>Sign out</button></div></header>
     <div className="content admin-content attendance-content">
-      <div className="welcome"><span className="eyebrow">GREENOPS · ATTENDANCE COORDINATOR</span><h1>Participant check-in</h1><p className="muted">Mark participants present one by one. You can correct a check-in at any time.</p></div>
+      <div className="welcome"><span className="eyebrow">GREENOPS · ATTENDANCE COORDINATOR</span><h1>Participant check-in</h1><p className="muted">Mark participants present one by one. Updates sync across coordinator devices every 3 seconds{lastSyncedAt ? ` · Last synced ${new Date(lastSyncedAt).toLocaleTimeString()}` : ''}.</p></div>
       {error && <div className="error" role="alert">{error}</div>}
       <section className="card attendance-toolbar">
         <div className="attendance-counts"><span><b>{presentCount}</b><small>Present</small></span><span><b>{allStudents.length - presentCount}</b><small>Absent</small></span><span><b>{allStudents.length}</b><small>Total members</small></span></div>
