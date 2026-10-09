@@ -1361,7 +1361,11 @@ class HackathonApplicationTests {
                         .file(csvUpload(TeamRegistrationFields.LABELS, repeatedWithinTeam))
                         .header("X-Admin-Password", ADMIN_PASSWORD))
                 .andExpect(status().isConflict())
-                .andExpect(jsonPath("$.message").value(org.hamcrest.Matchers.containsString("rows 2 and 2")));
+                .andExpect(jsonPath("$.message").value(org.hamcrest.Matchers.allOf(
+                        org.hamcrest.Matchers.containsString(
+                                "Register number 26MCA9401 appears more than once within the team on CSV row 2"),
+                        org.hamcrest.Matchers.containsString(
+                                "spreadsheet formatting has not converted register numbers to scientific notation"))));
         org.junit.jupiter.api.Assertions.assertEquals(0, teams.count());
 
         List<String> missingRegister = teamRow("LEADER", "26MCA9402", "same-user@example.test");

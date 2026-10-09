@@ -934,8 +934,16 @@ public class HackathonController {
                     }
                     participants.add(new ImportedParticipant(register, name));
                 }
+                Set<String> rowRegisters = new HashSet<>();
                 for (ImportedParticipant participant : participants) {
                     String register = normalizeRegisterNumber(participant.registerNumber());
+                    if (!rowRegisters.add(register)) {
+                        throw new ResponseStatusException(HttpStatus.CONFLICT,
+                                "Register number " + register + " appears more than once within the team on CSV row "
+                                        + rowNumber + ". Each participant in a team must have a unique register number. "
+                                        + "Check that spreadsheet formatting has not converted register numbers to "
+                                        + "scientific notation, and correct any repeated values before importing.");
+                    }
                     LoginIdentity identity = new LoginIdentity(teamEmail, register);
                     Integer previousRow = importedLoginRows.putIfAbsent(identity, rowNumber);
                     if (previousRow != null) {
