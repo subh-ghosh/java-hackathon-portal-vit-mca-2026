@@ -47,6 +47,6 @@ public class Student {
     public Team getTeam() { return team; }
     public void setTeam(Team value) {
         team = value;
-        setLoginUsername(value == null ? null : value.getRegistrationUsername());
+        setLoginUsername(value == null ? null : value.getParticipantLoginIdentifier());
     }
 }

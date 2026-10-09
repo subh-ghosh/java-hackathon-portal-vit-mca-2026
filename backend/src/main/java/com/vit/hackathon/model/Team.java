@@ -31,10 +31,10 @@ public class Team {
     @Column(name = "registration_username", length = 320)
     private String registrationUsername;
 
-    @Column(name = "group_leader_name", nullable = false, length = 255)
+    @Column(name = "group_leader_name", length = 255)
     private String groupLeaderName;
 
-    @Column(name = "group_leader_register_number", nullable = false, length = 80)
+    @Column(name = "group_leader_register_number", length = 80)
     private String groupLeaderRegisterNumber;
 
     @Column(name = "member_2_name", length = 255)
@@ -55,10 +55,10 @@ public class Team {
     @Column(name = "member_4_register_number", length = 80)
     private String member4RegisterNumber;
 
-    @Column(name = "primary_contact_number", length = 50)
+    @Column(name = "primary_contact_number", nullable = false, length = 50)
     private String primaryContactNumber;
 
-    @Column(name = "primary_email", length = 320)
+    @Column(name = "primary_email", nullable = false, length = 320)
     private String primaryEmail;
 
     @Column(length = 100)
@@ -92,6 +92,9 @@ public class Team {
     public List<Student> getStudents() { return students; }
     public String getRegistrationTimestamp() { return registrationTimestamp; }
     public String getRegistrationUsername() { return registrationUsername; }
+    public String getParticipantLoginIdentifier() {
+        return primaryEmail == null || primaryEmail.isBlank() ? registrationUsername : primaryEmail;
+    }
     public String getGroupLeaderName() { return groupLeaderName; }
     public String getGroupLeaderRegisterNumber() { return groupLeaderRegisterNumber; }
     public String getMember2Name() { return member2Name; }
@@ -138,7 +141,7 @@ public class Team {
                 if (index < 0) continue;
                 if (seenFields[index]) throw new IllegalArgumentException("Duplicate team registration field");
                 seenFields[index] = true;
-                String fieldValue = value(field.getFieldValue());
+                String fieldValue = blankToNull(field.getFieldValue());
                 switch (index) {
                     case 0 -> registrationTimestamp = fieldValue;
                     case 1 -> registrationUsername = fieldValue;
@@ -164,11 +167,16 @@ public class Team {
             }
         }
         for (Student student : students) {
-            student.setLoginUsername(registrationUsername);
+            student.setLoginUsername(getParticipantLoginIdentifier());
         }
     }
 
     private static String value(String value) {
         return value == null ? "" : value;
+    }
+
+    private static String blankToNull(String value) {
+        if (value == null || value.isBlank()) return null;
+        return value.trim();
     }
 }

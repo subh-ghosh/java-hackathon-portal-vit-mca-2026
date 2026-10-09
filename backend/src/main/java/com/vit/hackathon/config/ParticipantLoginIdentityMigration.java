@@ -37,7 +37,7 @@ public class ParticipantLoginIdentityMigration implements ApplicationRunner {
         for (Student participant : participants) {
             if (participant.getTeam() != null
                     && !normalize(participant.getLoginUsername())
-                    .equals(normalize(participant.getTeam().getRegistrationUsername()))) {
+                    .equals(normalize(participant.getTeam().getParticipantLoginIdentifier()))) {
                 participant.setTeam(participant.getTeam());
             }
         }
