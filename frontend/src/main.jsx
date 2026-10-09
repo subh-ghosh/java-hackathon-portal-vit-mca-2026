@@ -491,9 +491,9 @@ function Login({ onLogin, onAdmin }) {
               <h4>Subarta Ghosh</h4>
               <a href="tel:+917319591361">+91 73195 91361</a>
               <a href="mailto:subarta.ghosh2025@vitstudent.ac.in">subarta.ghosh2025@vitstudent.ac.in</a>
-              <p className="support-credit">This website is created and managed by <a href="https://www.linkedin.com/in/subhh/" target="_blank" rel="noreferrer">Subarta Ghosh</a>.</p>
             </article>
           </div>
+          <p className="support-credit">This website is created and managed by <a href="https://www.linkedin.com/in/subhh/" target="_blank" rel="noreferrer">Subarta Ghosh</a>.</p>
         </section>
       </section>
     </main>
