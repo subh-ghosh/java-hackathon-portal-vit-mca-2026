@@ -209,6 +209,7 @@ body:has(.login-shell) .mode-switch{top:20px;bottom:auto}
 .registration-details-grid>div{min-width:0;padding:13px 15px;border:1px solid #e1e9e2;border-radius:10px;background:#fbfcfa}
 .registration-details-grid dt{margin-bottom:6px;color:#718779;font:500 .62rem 'DM Mono',monospace;line-height:1.5}
 .registration-details-grid dd{margin:0;color:#21392b;font-size:.8rem;line-height:1.55;overflow-wrap:anywhere;white-space:pre-wrap}
+.team-members-heading{margin:30px 0 14px;font-size:.75rem;text-transform:uppercase;letter-spacing:.12em}
 .problem-card .eyebrow{color:#4c8053}
 .problem-card-actions{display:flex;align-items:center;gap:9px}
 .problem-card-actions .small-button{white-space:nowrap}

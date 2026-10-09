@@ -445,14 +445,14 @@ function Student({ team, credentials, logout, refreshSession }) {
               <dt>{field.fieldName}</dt><dd>{field.fieldValue}</dd>
             </div>)}</dl>
             : <div className="empty">No registration details are available for this team.</div>}
+          <h3 className="team-members-heading">Group members</h3>
+          <div className="members">{team.students.map(s => <div className="member" key={s.registerNumber}><span>{(s.name || s.registerNumber).charAt(0)}</span><div><b>{s.name || 'Name not provided'}</b><small>{s.registerNumber}{s.leader ? ' - Group leader' : ''}</small></div></div>)}</div>
         </section>
         <div className="student-grid">
           <section className="card problem-card">
             <div className="card-top"><span className="eyebrow">YOUR GREENOPS CHALLENGE {team.problem ? `· #${team.problem.id}` : ''}</span><div className="problem-card-actions"><button type="button" className="small-button" onClick={refreshChallenge} disabled={refreshingChallenge}>{refreshingChallenge ? 'Refreshing…' : 'Refresh challenge'}</button><span className="pill">{team.problem ? 'Ready' : 'Not published'}</span></div></div>
             {team.problem ? <><h2>{team.problem.title}</h2><p>{team.problem.statement}</p></> : <div className="empty">No published challenge is available. If the coordinator just assigned one, refresh here; the problem must also be enabled before participants can view it.</div>}
             {challengeNotice && <div className={challengeNoticeType} role={challengeNoticeType === 'error' ? 'alert' : 'status'}>{challengeNotice}</div>}
-            <h3>Group members</h3>
-            <div className="members">{team.students.map(s => <div className="member" key={s.registerNumber}><span>{(s.name || s.registerNumber).charAt(0)}</span><div><b>{s.name || 'Name not provided'}</b><small>{s.registerNumber}{s.leader ? ' - Group leader' : ''}</small></div></div>)}</div>
           </section>
           <form className="card submission-card" onSubmit={submit}>
             <span className="eyebrow">GREENOPS · FINAL ENTRY</span>
