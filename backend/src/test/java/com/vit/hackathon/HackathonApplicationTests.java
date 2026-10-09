@@ -842,7 +842,7 @@ class HackathonApplicationTests {
     }
 
     @Test
-    void roundTwoWorkflowKeepsRoundOneAssignmentAndSubmissionUntouched() throws Exception {
+    void roundTwoReusesRoundOneProblemAndWorksWithoutAttendance() throws Exception {
         Team team = createTeam("ROUND TWO LEADER", "26MCA9981", "round-two@example.test");
         Student presentMember = team.getStudents().get(0);
         presentMember.setPresent(true);
@@ -853,11 +853,6 @@ class HackathonApplicationTests {
         roundOneProblem.setStatement("Round 1 challenge statement");
         roundOneProblem.setEnabled(true);
         roundOneProblem = problems.saveAndFlush(roundOneProblem);
-
-        Problem roundTwoProblem = new Problem();
-        roundTwoProblem.setTitle("Round 2 problem");
-        roundTwoProblem.setStatement("Round 2 challenge statement");
-        roundTwoProblem = problems.saveAndFlush(roundTwoProblem);
 
         mockMvc.perform(put("/api/admin/teams/{teamId}/problem/{problemId}", team.getId(), roundOneProblem.getId())
                         .header("X-Admin-Password", ADMIN_PASSWORD))
@@ -889,11 +884,15 @@ class HackathonApplicationTests {
                         .content("{\"status\":\"advanced\"}"))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.roundTwoStatus").value("advanced"));
-        mockMvc.perform(put("/api/admin/teams/{teamId}/round-two/problem/{problemId}",
-                        team.getId(), roundTwoProblem.getId())
-                        .header("X-Admin-Password", ADMIN_PASSWORD))
-                .andExpect(status().isOk())
-                .andExpect(jsonPath("$.roundTwoProblem.id").value(roundTwoProblem.getId()));
+        presentMember.setPresent(false);
+        students.saveAndFlush(presentMember);
+
+        mockMvc.perform(put("/api/student/submission")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(credentialsAndRoundOneLinks))
+                .andExpect(status().isForbidden())
+                .andExpect(jsonPath("$.message").value(
+                        org.hamcrest.Matchers.containsString("No team members are checked in")));
 
         String roundTwoLinks = new ObjectMapper().writeValueAsString(Map.of(
                 "email", team.getPrimaryEmail(),
@@ -914,10 +913,13 @@ class HackathonApplicationTests {
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.problem.id").value(roundOneProblem.getId()))
                 .andExpect(jsonPath("$.submission.googleDriveLink").value(roundOneDrive))
-                .andExpect(jsonPath("$.roundTwoProblem.id").value(roundTwoProblem.getId()))
+                .andExpect(jsonPath("$.students.length()").value(1))
+                .andExpect(jsonPath("$.students[0].present").value(false))
+                .andExpect(jsonPath("$.roundTwoProblem.id").value(roundOneProblem.getId()))
                 .andExpect(jsonPath("$.roundTwoSubmission.googleDriveLink").value(roundTwoDrive))
                 .andExpect(jsonPath("$.roundTwoStatus").value("advanced"))
-                .andExpect(jsonPath("$.roundTwoOpen").value(true));
+                .andExpect(jsonPath("$.roundTwoOpen").value(true))
+                .andExpect(jsonPath("$.roundTwoPublished").value(true));
         mockMvc.perform(get("/api/admin/round-two/submissions")
                         .header("X-Admin-Password", ADMIN_PASSWORD))
                 .andExpect(status().isOk())
@@ -933,6 +935,15 @@ class HackathonApplicationTests {
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(roundTwoLinks))
                 .andExpect(status().isForbidden());
+        mockMvc.perform(post("/api/student/login")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(new ObjectMapper().writeValueAsString(Map.of(
+                                "email", team.getPrimaryEmail(),
+                                "contactNumber", team.getPrimaryContactNumber()))))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.roundTwoPublished").value(true))
+                .andExpect(jsonPath("$.roundTwoOpen").value(false))
+                .andExpect(jsonPath("$.roundTwoSubmission.googleDriveLink").value(roundTwoDrive));
 
         org.junit.jupiter.api.Assertions.assertEquals(roundOneDrive,
                 submissions.findByTeamId(team.getId()).orElseThrow().getGoogleDriveLink());

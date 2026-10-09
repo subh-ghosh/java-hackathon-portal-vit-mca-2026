@@ -113,11 +113,12 @@ public class HackathonController {
         if (request == null) {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Participant login details are required");
         }
+        boolean roundTwoPublished = roundTwoPublished();
         boolean roundTwoOpen = isRoundTwoOpen();
-        if (!roundTwoOpen || Boolean.parseBoolean(settingValue("login-paused", "false"))) {
+        if (!roundTwoPublished || Boolean.parseBoolean(settingValue("login-paused", "false"))) {
             enforceLoginWindow();
         }
-        Team team = authenticateTeam(request.email(), request.contactNumber());
+        Team team = authenticateTeam(request.email(), request.contactNumber(), !roundTwoPublished);
         ensureTeamNumber(team);
         String leaderRegisterNumber = team.getStudents().stream()
                 .filter(Student::isPresent)
@@ -127,12 +128,13 @@ public class HackathonController {
                 .orElse(null);
         Problem visibleProblem = team.getProblem() != null && team.getProblem().isEnabled() ? team.getProblem() : null;
         return new StudentTeamResponse(team.getName(), team.getTeamNumber(), leaderRegisterNumber, visibleProblem,
-                team.getStudents().stream().filter(Student::isPresent).toList(),
+                roundTwoPublished ? team.getStudents() : team.getStudents().stream().filter(Student::isPresent).toList(),
                 submissions.findByTeamId(team.getId()).orElse(null), team.getImportedFields(),
-                team.isAdvancedToRoundTwo(), roundTwoPublished() && team.isAdvancedToRoundTwo()
-                        ? team.getRoundTwoProblem() : null,
+                team.isAdvancedToRoundTwo(), roundTwoPublished && team.isAdvancedToRoundTwo()
+                        ? team.getProblem() : null,
                 team.isAdvancedToRoundTwo() ? roundTwoSubmissions.findByTeamId(team.getId()).orElse(null) : null,
-                roundTwoOpen, localTime(settingValue("round-two-deadline", "")), team.getRoundTwoStatus());
+                roundTwoOpen, roundTwoPublished, localTime(settingValue("round-two-deadline", "")),
+                team.getRoundTwoStatus());
     }
 
     @PostMapping("/attendance/login")
@@ -330,27 +332,6 @@ public class HackathonController {
         return teams.save(team);
     }
 
-    @PutMapping("/admin/teams/{teamId}/round-two/problem/{problemId}")
-    @Transactional
-    public Team assignRoundTwoProblem(@RequestHeader("X-Admin-Password") String password,
-                                      @PathVariable Long teamId, @PathVariable Long problemId) {
-        requireAdmin(password);
-        Team team = findTeam(teamId);
-        team.setRoundTwoProblem(problems.findById(problemId)
-                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Problem not found")));
-        return teams.save(team);
-    }
-
-    @DeleteMapping("/admin/teams/{teamId}/round-two/problem")
-    @Transactional
-    public Team unassignRoundTwoProblem(@RequestHeader("X-Admin-Password") String password,
-                                        @PathVariable Long teamId) {
-        requireAdmin(password);
-        Team team = findTeam(teamId);
-        team.setRoundTwoProblem(null);
-        return teams.save(team);
-    }
-
     @PutMapping("/student/submission")
     public Submission saveSubmission(@RequestBody SubmissionRequest request) {
         if (request == null) {
@@ -375,15 +356,15 @@ public class HackathonController {
         if (request == null) {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Round 2 submission links are required");
         }
-        Team authenticatedTeam = authenticateTeam(request.email(), request.contactNumber());
+        Team authenticatedTeam = authenticateTeam(request.email(), request.contactNumber(), false);
         requireParticipantNotPaused();
         requireRoundTwoOpen();
         if (!authenticatedTeam.isAdvancedToRoundTwo()) {
             throw new ResponseStatusException(HttpStatus.FORBIDDEN, "This team has not advanced to Round 2");
         }
-        if (authenticatedTeam.getRoundTwoProblem() == null) {
+        if (authenticatedTeam.getProblem() == null) {
             throw new ResponseStatusException(HttpStatus.FORBIDDEN,
-                    "The Round 2 problem has not been assigned to this team yet");
+                    "This team does not have a Round 1 problem assignment to continue in Round 2");
         }
         requireWebUrl(request.googleDriveLink(), "Round 2 Google Drive");
         requireWebUrl(request.githubLink(), "Round 2 GitHub");
@@ -576,10 +557,6 @@ public class HackathonController {
             team.setProblem(null);
             teams.save(team);
         });
-        teams.findAll().stream().filter(team -> problem.equals(team.getRoundTwoProblem())).forEach(team -> {
-            team.setRoundTwoProblem(null);
-            teams.save(team);
-        });
         problems.delete(problem);
     }
 
@@ -588,10 +565,7 @@ public class HackathonController {
     public void clearProblems(@RequestHeader("X-Admin-Password") String password) {
         requireAdmin(password);
         List<Team> allTeams = teams.findAll();
-        allTeams.forEach(team -> {
-            team.setProblem(null);
-            team.setRoundTwoProblem(null);
-        });
+        allTeams.forEach(team -> team.setProblem(null));
         teams.saveAll(allTeams);
         problems.deleteAllInBatch();
     }
@@ -1316,6 +1290,10 @@ public class HackathonController {
     }
 
     private Team authenticateTeam(String email, String contactNumber) {
+        return authenticateTeam(email, contactNumber, true);
+    }
+
+    private Team authenticateTeam(String email, String contactNumber, boolean requirePresentMember) {
         String identity = normalizeTeamUsername(email);
         String normalizedContactNumber = normalizeContactNumber(contactNumber);
         if (identity.isBlank() || normalizedContactNumber.isBlank()) {
@@ -1334,7 +1312,7 @@ public class HackathonController {
         }
         attemptLimiter.participantSucceeded(identity, normalizedContactNumber);
         Team team = matches.get(0);
-        if (team.getStudents().stream().noneMatch(Student::isPresent)) {
+        if (requirePresentMember && team.getStudents().stream().noneMatch(Student::isPresent)) {
             throw new ResponseStatusException(HttpStatus.FORBIDDEN,
                     "No team members are checked in. Ask the Attendance Coordinator to mark at least one member present.");
         }
@@ -1450,7 +1428,8 @@ public class HackathonController {
                                       List<Student> students, Submission submission,
                                       List<ImportedTeamField> importedFields, boolean advancedToRoundTwo,
                                       Problem roundTwoProblem, RoundTwoSubmission roundTwoSubmission,
-                                      boolean roundTwoOpen, String roundTwoDeadline, String roundTwoStatus) {}
+                                      boolean roundTwoOpen, boolean roundTwoPublished,
+                                      String roundTwoDeadline, String roundTwoStatus) {}
     public record ProblemRequest(String title, String statement) {}
     public record TeamRequest(String name, List<ImportedTeamField> importedFields) {}
     public record ImportedFieldsRequest(List<ImportedTeamField> fields) {}
