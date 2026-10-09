@@ -340,3 +340,14 @@ body:has(.login-shell) .mode-switch{top:20px;bottom:auto}
   .event-schedule-list>div{grid-template-columns:1fr;gap:4px}
   .event-support-contacts{grid-template-columns:1fr}
 }
+.admin-attendance-summary{grid-template-columns:1fr auto}
+.admin-attendance-summary h2{margin:6px 0}
+.admin-attendance-summary .attendance-counts{gap:clamp(18px,4vw,42px)}
+.admin-search-field{display:grid;gap:7px;margin:0 28px 16px;color:#53645a;font-size:.75rem;font-weight:700}
+.admin-search-field input{box-sizing:border-box;width:100%;min-height:42px;padding:10px 12px;border:1px solid #dce4de;border-radius:8px;background:#fff;color:#26372c;font:inherit;font-weight:400}
+.admin-search-field input:focus{outline:2px solid #7da98a;outline-offset:1px}
+@media(max-width:640px){
+  .admin-attendance-summary{grid-template-columns:1fr;gap:16px}
+  .admin-attendance-summary .attendance-counts{justify-content:space-between;gap:12px}
+  .admin-search-field{margin-inline:18px}
+}
