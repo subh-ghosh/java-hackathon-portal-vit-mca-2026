@@ -325,11 +325,12 @@ body:has(.login-shell) .portal-mode-switches{top:20px;bottom:auto}
 .event-support>.eyebrow,.event-support .eyebrow{color:#4d795a}
 .event-support h3{margin:7px 0;font-size:1.15rem;color:#25392c}
 .event-support p{margin:0;color:#718077;font-size:.76rem;line-height:1.6}
-.event-support-contacts{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px}
+.event-support-contacts{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:12px}
 .event-support-contact{display:flex;min-width:0;flex-direction:column;gap:7px;padding:15px;border:1px solid #e7eee7;border-radius:10px;background:#f8faf7}
 .event-support-contact h4{margin:0 0 2px;color:#25392c;font-size:.8rem}
 .event-support-contact a{width:fit-content;max-width:100%;color:#3e714b;font-size:.72rem;line-height:1.5;overflow-wrap:anywhere;text-decoration:underline;text-underline-offset:2px}
 @media(max-width:760px){
+  .event-support-contacts{grid-template-columns:repeat(2,minmax(0,1fr))}
   .event-details{padding:34px 18px}
   .event-detail-grid{grid-template-columns:1fr;gap:12px}
   .event-detail-card{padding:20px}
