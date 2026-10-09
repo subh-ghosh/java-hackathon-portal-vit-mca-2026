@@ -105,6 +105,8 @@ body:has(.login-shell) .mode-switch{top:20px;bottom:auto}
 .import-progress.loading-state{min-height:48px;justify-content:flex-start;padding:14px 0 0}
 .load-error-state{min-height:92px;display:flex;align-items:center;justify-content:center;gap:12px;padding:20px;color:#ae4439;font-size:.85rem}
 .loading-spinner{width:18px;height:18px;flex:0 0 18px;border:2px solid #dce8dd;border-top-color:#34794d;border-radius:50%;animation:portal-spin .75s linear infinite}
+.problem-library-actions button:disabled:not(.bulk-problem-toggle){display:inline-flex;align-items:center;justify-content:center;gap:8px}
+.problem-library-actions button:disabled:not(.bulk-problem-toggle)::before{content:"";width:13px;height:13px;flex:0 0 13px;border:2px solid currentColor;border-top-color:transparent;border-radius:50%;animation:portal-spin .75s linear infinite}
 @keyframes portal-spin{to{transform:rotate(360deg)}}
 @media(max-width:760px){
   .content{padding:38px 20px}
