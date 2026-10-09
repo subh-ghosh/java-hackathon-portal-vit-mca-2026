@@ -730,6 +730,14 @@ class HackathonApplicationTests {
                 .andExpect(header().string("Access-Control-Allow-Origin",
                         "https://vit-hackathon-portal.pages.dev"));
 
+        mockMvc.perform(options("/api/attendance/students/1")
+                        .header("Origin", "https://vit-hackathon-portal.pages.dev")
+                        .header("Access-Control-Request-Method", "PUT")
+                        .header("Access-Control-Request-Headers", "content-type,x-attendance-password"))
+                .andExpect(status().isOk())
+                .andExpect(header().string("Access-Control-Allow-Headers",
+                        org.hamcrest.Matchers.containsString("x-attendance-password")));
+
         mockMvc.perform(options("/api/public/config")
                         .header("Origin", "https://untrusted.example")
                         .header("Access-Control-Request-Method", "GET"))
