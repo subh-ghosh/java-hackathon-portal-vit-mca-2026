@@ -1139,6 +1139,20 @@ function Admin() {
     const form = e.currentTarget;
     const formData = new FormData();
     formData.append('file', csvFile);
+    const controls = [...form.querySelectorAll('button, input')];
+    const disabledStates = controls.map(control => control.disabled);
+    controls.forEach(control => { control.disabled = true; });
+    const progress = document.createElement('div');
+    progress.className = 'loading-state import-progress';
+    progress.setAttribute('role', 'status');
+    progress.setAttribute('aria-live', 'polite');
+    const spinner = document.createElement('span');
+    spinner.className = 'loading-spinner';
+    spinner.setAttribute('aria-hidden', 'true');
+    const progressText = document.createElement('span');
+    progressText.textContent = 'Importing teams. Please wait…';
+    progress.append(spinner, progressText);
+    form.after(progress);
     try {
       const imported = await request('/admin/teams/import', { method: 'POST', headers: headers(), body: formData });
       setTeams([...teams, ...imported]);
@@ -1151,6 +1165,9 @@ function Admin() {
         ? `Team import failed: ${error.message} No teams were imported. Remove the repeated participant or edit their existing team.`
         : `Team import failed: ${error.message} No teams were imported.`;
       setErrorNotice(message);
+    } finally {
+      progress.remove();
+      controls.forEach((control, index) => { control.disabled = disabledStates[index]; });
     }
   }
   function downloadTeamImportTemplate() {
@@ -1184,6 +1201,7 @@ function Admin() {
     }
   }
   function closeImportDialog() {
+    if (document.querySelector('.import-progress')) return;
     setImportDialog(null);
     setCsvFile(null);
     setQuestionCsvFile(null);
