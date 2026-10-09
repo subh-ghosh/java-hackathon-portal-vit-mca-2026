@@ -892,7 +892,7 @@ class HackathonApplicationTests {
                         .content(credentialsAndRoundOneLinks))
                 .andExpect(status().isForbidden())
                 .andExpect(jsonPath("$.message").value(
-                        org.hamcrest.Matchers.containsString("No team members are checked in")));
+                        org.hamcrest.Matchers.containsString("Round 1 is not currently active")));
 
         String roundTwoLinks = new ObjectMapper().writeValueAsString(Map.of(
                 "email", team.getPrimaryEmail(),
@@ -943,6 +943,29 @@ class HackathonApplicationTests {
                         .header("X-Admin-Password", ADMIN_PASSWORD))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$[0].googleDriveLink").value(roundTwoDrive));
+        mockMvc.perform(get("/api/admin/round-two/submissions/export"))
+                .andExpect(status().isBadRequest());
+        byte[] exportedRoundTwoWorkbook = mockMvc.perform(get("/api/admin/round-two/submissions/export")
+                        .header("X-Admin-Password", ADMIN_PASSWORD))
+                .andExpect(status().isOk())
+                .andExpect(content().contentType(
+                        "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"))
+                .andExpect(header().string("Content-Disposition",
+                        org.hamcrest.Matchers.containsString("hackathon-round-two-submissions.xlsx")))
+                .andReturn()
+                .getResponse()
+                .getContentAsByteArray();
+        try (Workbook exportedFile = WorkbookFactory.create(new ByteArrayInputStream(exportedRoundTwoWorkbook))) {
+            Row submissionRow = exportedFile.getSheet("Round 2 Submissions").getRow(1);
+            org.junit.jupiter.api.Assertions.assertEquals("Team 001",
+                    submissionRow.getCell(1).getStringCellValue());
+            org.junit.jupiter.api.Assertions.assertEquals(roundTwoDrive,
+                    submissionRow.getCell(4).getStringCellValue());
+            org.junit.jupiter.api.Assertions.assertEquals(roundTwoGithub,
+                    submissionRow.getCell(5).getStringCellValue());
+        }
+        mockMvc.perform(delete("/api/admin/round-two/submissions"))
+                .andExpect(status().isBadRequest());
 
         mockMvc.perform(put("/api/admin/round-two/settings")
                         .header("X-Admin-Password", ADMIN_PASSWORD)
@@ -971,10 +994,16 @@ class HackathonApplicationTests {
                 roundTwoSubmissions.findByTeamId(team.getId()).orElseThrow().getGoogleDriveLink());
         org.junit.jupiter.api.Assertions.assertEquals(roundOneProblem.getId(),
                 teams.findById(team.getId()).orElseThrow().getProblem().getId());
+        mockMvc.perform(delete("/api/admin/round-two/submissions")
+                        .header("X-Admin-Password", ADMIN_PASSWORD))
+                .andExpect(status().isOk());
+        org.junit.jupiter.api.Assertions.assertTrue(roundTwoSubmissions.findAll().isEmpty());
+        org.junit.jupiter.api.Assertions.assertEquals(roundOneDrive,
+                submissions.findByTeamId(team.getId()).orElseThrow().getGoogleDriveLink());
     }
 
     @Test
-    void roundTwoActiveWindowLetsNonAdvancedTeamsSeeTheirStatus() throws Exception {
+    void onlyAdvancedTeamsCanLoginDuringRoundTwoAndRoundAccessIsExclusive() throws Exception {
         Team team = createTeam("ROUND TWO PENDING", "26MCA9982", "round-two-pending@example.test");
         Student member = team.getStudents().get(0);
         member.setPresent(true);
@@ -986,8 +1015,32 @@ class HackathonApplicationTests {
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("{\"enabled\":true,\"deadline\":\"2099-10-10T00:00:00Z\"}"))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$.open").value(true));
+                .andExpect(jsonPath("$.open").value(true))
+                .andExpect(jsonPath("$.activeRound").value("2"));
 
+        mockMvc.perform(post("/api/student/login")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(new ObjectMapper().writeValueAsString(Map.of(
+                                "email", team.getPrimaryEmail(),
+                                "contactNumber", team.getPrimaryContactNumber()))))
+                .andExpect(status().isForbidden())
+                .andExpect(jsonPath("$.message").value("This team has not advanced to Round 2"));
+
+        mockMvc.perform(put("/api/student/submission")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(new ObjectMapper().writeValueAsString(Map.of(
+                                "email", team.getPrimaryEmail(),
+                                "contactNumber", team.getPrimaryContactNumber(),
+                                "googleDriveLink", "https://drive.google.com/round-one",
+                                "githubLink", "https://github.com/example/round-one"))))
+                .andExpect(status().isForbidden())
+                .andExpect(jsonPath("$.message").value("Round 1 is not currently active"));
+
+        mockMvc.perform(put("/api/admin/teams/{teamId}/round-two/qualification", team.getId())
+                        .header("X-Admin-Password", ADMIN_PASSWORD)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"status\":\"advanced\"}"))
+                .andExpect(status().isOk());
         mockMvc.perform(post("/api/student/login")
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(new ObjectMapper().writeValueAsString(Map.of(
@@ -995,8 +1048,30 @@ class HackathonApplicationTests {
                                 "contactNumber", team.getPrimaryContactNumber()))))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.roundTwoOpen").value(true))
-                .andExpect(jsonPath("$.advancedToRoundTwo").value(false))
-                .andExpect(jsonPath("$.roundTwoStatus").value("pending"));
+                .andExpect(jsonPath("$.advancedToRoundTwo").value(true));
+
+        mockMvc.perform(put("/api/admin/round-access/settings")
+                        .header("X-Admin-Password", ADMIN_PASSWORD)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"activeRound\":\"1\",\"startTime\":\"\",\"endTime\":\"\","
+                                + "\"deadline\":\"\",\"attendancePassword\":\"\"}"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.activeRound").value("1"))
+                .andExpect(jsonPath("$.open").value(false));
+        mockMvc.perform(post("/api/student/login")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(new ObjectMapper().writeValueAsString(Map.of(
+                                "email", team.getPrimaryEmail(),
+                                "contactNumber", team.getPrimaryContactNumber()))))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.roundTwoOpen").value(false));
+        mockMvc.perform(put("/api/student/round-two/submission")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"email\":\"" + team.getPrimaryEmail() + "\","
+                                + "\"contactNumber\":\"" + team.getPrimaryContactNumber() + "\","
+                                + "\"googleDriveLink\":\"https://drive.google.com/round-two\","
+                                + "\"githubLink\":\"https://github.com/example/round-two\"}"))
+                .andExpect(status().isForbidden());
     }
 
     private List<ImportedTeamField> teamFields(String leaderName, String leaderRegister, String username) {

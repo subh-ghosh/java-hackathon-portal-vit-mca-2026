@@ -113,12 +113,21 @@ public class HackathonController {
         if (request == null) {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Participant login details are required");
         }
+        requireParticipantNotPaused();
+        String activeRound = activeRound();
+        if ("1".equals(activeRound)) {
+            enforceLoginWindow();
+        } else if ("2".equals(activeRound)) {
+            requireRoundTwoOpen();
+        } else {
+            throw new ResponseStatusException(HttpStatus.FORBIDDEN, "Participant login is currently disabled");
+        }
         boolean roundTwoPublished = roundTwoPublished();
         boolean roundTwoOpen = isRoundTwoOpen();
-        if (!roundTwoOpen || Boolean.parseBoolean(settingValue("login-paused", "false"))) {
-            enforceLoginWindow();
-        }
         Team team = authenticateTeam(request.email(), request.contactNumber());
+        if ("2".equals(activeRound) && !team.isAdvancedToRoundTwo()) {
+            throw new ResponseStatusException(HttpStatus.FORBIDDEN, "This team has not advanced to Round 2");
+        }
         ensureTeamNumber(team);
         String leaderRegisterNumber = team.getStudents().stream()
                 .filter(Student::isPresent)
@@ -189,19 +198,58 @@ public class HackathonController {
         saveSetting("login-enabled", Boolean.toString(request.loginEnabled()));
         saveSetting("login-start", request.startTime() == null ? "" : request.startTime());
         saveSetting("login-end", request.endTime() == null ? "" : request.endTime());
-        String attendancePassword = request.attendancePassword();
-        if (attendancePassword != null && !attendancePassword.isBlank()) {
-            if (attendancePassword.length() < 8 || attendancePassword.length() > 72) {
-                throw new ResponseStatusException(HttpStatus.BAD_REQUEST,
-                        "Attendance password must be between 8 and 72 characters");
-            }
-            if (passwordEncoder.matches(attendancePassword, adminPassword)) {
-                throw new ResponseStatusException(HttpStatus.BAD_REQUEST,
-                        "Attendance password must be different from the admin password");
-            }
-            saveSetting("attendance-password", passwordEncoder.encode(attendancePassword));
+        if (!"2".equals(activeRound())) {
+            boolean hasSchedule = (request.startTime() != null && !request.startTime().isBlank())
+                    || (request.endTime() != null && !request.endTime().isBlank());
+            saveSetting("active-round", request.loginEnabled() || hasSchedule ? "1" : "none");
         }
+        updateAttendancePassword(request.attendancePassword());
         return settingsPayload();
+    }
+
+    @GetMapping("/admin/round-access/settings")
+    public Map<String, Object> roundAccessSettings(@RequestHeader("X-Admin-Password") String password) {
+        requireAdmin(password);
+        Map<String, Object> payload = settingsPayload();
+        payload.putAll(roundTwoSettingsPayload());
+        payload.put("activeRound", activeRound());
+        return payload;
+    }
+
+    @PutMapping("/admin/round-access/settings")
+    @Transactional
+    public Map<String, Object> updateRoundAccessSettings(@RequestHeader("X-Admin-Password") String password,
+                                                          @RequestBody RoundAccessSettingsRequest request) {
+        requireAdmin(password);
+        if (request == null || request.activeRound() == null
+                || !List.of("1", "2").contains(request.activeRound())) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Select Round 1 or Round 2 as the active round");
+        }
+        OffsetDateTime startTime = parseOptionalTime(request.startTime(), "Round 1 start");
+        OffsetDateTime endTime = parseOptionalTime(request.endTime(), "Round 1 end");
+        if (startTime != null && endTime != null && !endTime.isAfter(startTime)) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Round 1 end time must be after start time");
+        }
+        OffsetDateTime deadline = parseOptionalTime(request.deadline(), "Round 2 deadline");
+        if ("2".equals(request.activeRound()) && deadline != null
+                && !deadline.isAfter(OffsetDateTime.now(ZoneOffset.UTC))) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Round 2 deadline must be in the future");
+        }
+        saveSetting("active-round", request.activeRound());
+        saveSetting("login-enabled", Boolean.toString("1".equals(request.activeRound())));
+        saveSetting("login-start", request.startTime() == null ? "" : request.startTime());
+        saveSetting("login-end", request.endTime() == null ? "" : request.endTime());
+        saveSetting("round-two-enabled", Boolean.toString("2".equals(request.activeRound())));
+        if ("2".equals(request.activeRound())) {
+            saveSetting("round-two-published", "true");
+        }
+        saveSetting("round-two-deadline", request.deadline() == null ? "" : request.deadline());
+        updateAttendancePassword(request.attendancePassword());
+
+        Map<String, Object> payload = settingsPayload();
+        payload.putAll(roundTwoSettingsPayload());
+        payload.put("activeRound", activeRound());
+        return payload;
     }
 
     @PutMapping("/admin/settings/pause")
@@ -303,6 +351,7 @@ public class HackathonController {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Round 2 deadline must be in the future");
         }
         saveSetting("round-two-enabled", Boolean.toString(request.enabled()));
+        saveSetting("active-round", request.enabled() ? "2" : "1");
         if (request.enabled()) {
             saveSetting("round-two-published", "true");
         }
@@ -315,6 +364,55 @@ public class HackathonController {
             @RequestHeader("X-Admin-Password") String password) {
         requireAdmin(password);
         return roundTwoSubmissions.findAll();
+    }
+
+    @GetMapping("/admin/round-two/submissions/export")
+    public ResponseEntity<byte[]> exportRoundTwoSubmissions(
+            @RequestHeader("X-Admin-Password") String password) {
+        requireAdmin(password);
+        try (Workbook workbook = new XSSFWorkbook(); ByteArrayOutputStream output = new ByteArrayOutputStream()) {
+            Sheet sheet = workbook.createSheet("Round 2 Submissions");
+            Row header = sheet.createRow(0);
+            String[] columns = {
+                    "Team number", "Team name", "Problem ID", "Problem title",
+                    "Google Drive link", "GitHub link", "Updated at"
+            };
+            for (int i = 0; i < columns.length; i++) {
+                header.createCell(i).setCellValue(columns[i]);
+            }
+            int rowNumber = 1;
+            for (RoundTwoSubmission submission : roundTwoSubmissions.findAll()) {
+                Team team = submission.getTeam();
+                Row row = sheet.createRow(rowNumber++);
+                setCell(row, 0, team.getTeamNumber() == null ? "" : team.getTeamNumber().toString());
+                setCell(row, 1, team.getName());
+                setCell(row, 2, team.getProblem() == null ? "" : team.getProblem().getId().toString());
+                setCell(row, 3, team.getProblem() == null ? "" : team.getProblem().getTitle());
+                setCell(row, 4, submission.getGoogleDriveLink());
+                setCell(row, 5, submission.getGithubLink());
+                setCell(row, 6, submission.getUpdatedAt().toString());
+            }
+            for (int i = 0; i < columns.length; i++) {
+                sheet.autoSizeColumn(i);
+            }
+            workbook.write(output);
+            return ResponseEntity.ok()
+                    .contentType(MediaType.parseMediaType(
+                            "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"))
+                    .header(HttpHeaders.CONTENT_DISPOSITION,
+                            "attachment; filename=\"hackathon-round-two-submissions.xlsx\"")
+                    .body(output.toByteArray());
+        } catch (IOException exception) {
+            throw new ResponseStatusException(HttpStatus.INTERNAL_SERVER_ERROR,
+                    "Could not generate Round 2 submissions workbook", exception);
+        }
+    }
+
+    @DeleteMapping("/admin/round-two/submissions")
+    @Transactional
+    public void clearRoundTwoSubmissions(@RequestHeader("X-Admin-Password") String password) {
+        requireAdmin(password);
+        roundTwoSubmissions.deleteAllInBatch();
     }
 
     @PutMapping("/admin/teams/{teamId}/round-two/qualification")
@@ -336,6 +434,9 @@ public class HackathonController {
     public Submission saveSubmission(@RequestBody SubmissionRequest request) {
         if (request == null) {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Submission links are required");
+        }
+        if (!"1".equals(activeRound())) {
+            throw new ResponseStatusException(HttpStatus.FORBIDDEN, "Round 1 is not currently active");
         }
         enforceLoginWindow();
         Team authenticatedTeam = authenticateTeam(request.email(), request.contactNumber());
@@ -1431,6 +1532,8 @@ public class HackathonController {
     public record ImportedFieldsRequest(List<ImportedTeamField> fields) {}
     public record StudentRequest(String name, String registerNumber, String email) {}
     public record SettingsRequest(boolean loginEnabled, String startTime, String endTime, String attendancePassword) {}
+    public record RoundAccessSettingsRequest(String activeRound, String startTime, String endTime,
+                                             String deadline, String attendancePassword) {}
     public record AttendanceLoginRequest(String password) {}
     public record AttendanceRequest(Boolean present) {}
     public record AttendanceMemberResponse(Long id, String name, String registerNumber, boolean leader,
@@ -1476,6 +1579,7 @@ public class HackathonController {
     private Map<String, Object> settingsPayload() {
         Map<String, Object> payload = new HashMap<>();
         payload.put("loginEnabled", Boolean.parseBoolean(settingValue("login-enabled", "true")));
+        payload.put("activeRound", activeRound());
         payload.put("accessPaused", Boolean.parseBoolean(settingValue("login-paused", "false")));
         payload.put("startTime", localTime(settingValue("login-start", "")));
         payload.put("endTime", localTime(settingValue("login-end", "")));
@@ -1485,7 +1589,9 @@ public class HackathonController {
 
     private Map<String, Object> roundTwoSettingsPayload() {
         Map<String, Object> payload = new HashMap<>();
-        payload.put("enabled", Boolean.parseBoolean(settingValue("round-two-enabled", "false")));
+        payload.put("activeRound", activeRound());
+        payload.put("enabled", "2".equals(activeRound())
+                && Boolean.parseBoolean(settingValue("round-two-enabled", "false")));
         payload.put("published", roundTwoPublished());
         payload.put("deadline", localTime(settingValue("round-two-deadline", "")));
         payload.put("open", isRoundTwoOpen());
@@ -1496,8 +1602,18 @@ public class HackathonController {
         return Boolean.parseBoolean(settingValue("round-two-published", "false"));
     }
 
+    private String activeRound() {
+        String configured = settingValue("active-round", "");
+        if ("1".equals(configured) || "2".equals(configured)) return configured;
+        if (Boolean.parseBoolean(settingValue("round-two-enabled", "false"))) return "2";
+        boolean scheduled = !settingValue("login-start", "").isBlank()
+                || !settingValue("login-end", "").isBlank();
+        return scheduled || Boolean.parseBoolean(settingValue("login-enabled", "true")) ? "1" : "none";
+    }
+
     private boolean isRoundTwoOpen() {
-        if (!Boolean.parseBoolean(settingValue("round-two-enabled", "false"))) return false;
+        if (!"2".equals(activeRound())
+                || !Boolean.parseBoolean(settingValue("round-two-enabled", "false"))) return false;
         OffsetDateTime deadline = parseOptionalTime(settingValue("round-two-deadline", ""),
                 "Round 2 deadline");
         return deadline == null || deadline.isAfter(OffsetDateTime.now(ZoneOffset.UTC));
@@ -1545,6 +1661,7 @@ public class HackathonController {
         if (!scheduled && !Boolean.parseBoolean(settingValue("login-enabled", "true"))) {
             throw new ResponseStatusException(HttpStatus.FORBIDDEN, "Participant login is currently disabled");
         }
+
         OffsetDateTime now = OffsetDateTime.now(ZoneOffset.UTC);
         try {
             if (!start.isBlank() && now.isBefore(OffsetDateTime.parse(start))) {
@@ -1555,6 +1672,20 @@ public class HackathonController {
             }
         } catch (DateTimeParseException exception) {
             throw new ResponseStatusException(HttpStatus.INTERNAL_SERVER_ERROR, "Invalid login schedule configured");
+        }
+    }
+
+    private void updateAttendancePassword(String attendancePassword) {
+        if (attendancePassword != null && !attendancePassword.isBlank()) {
+            if (attendancePassword.length() < 8 || attendancePassword.length() > 72) {
+                throw new ResponseStatusException(HttpStatus.BAD_REQUEST,
+                        "Attendance password must be between 8 and 72 characters");
+            }
+            if (passwordEncoder.matches(attendancePassword, adminPassword)) {
+                throw new ResponseStatusException(HttpStatus.BAD_REQUEST,
+                        "Attendance password must be different from the admin password");
+            }
+            saveSetting("attendance-password", passwordEncoder.encode(attendancePassword));
         }
     }
 
