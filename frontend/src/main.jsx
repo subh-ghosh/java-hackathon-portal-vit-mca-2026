@@ -1514,7 +1514,7 @@ function App() {
   useEffect(() => {
     if (mode !== 'student' || !session?.credentials) return undefined;
     let active = true;
-    const timer = window.setInterval(async () => {
+    const validateSession = async () => {
       try {
         const team = await request('/student/login', {
           method: 'POST',
@@ -1526,7 +1526,7 @@ function App() {
         setSession(updatedSession);
         setSessionSyncError('');
       } catch (error) {
-        if (active && error.status === 403) {
+        if (active && (error.status === 401 || error.status === 403)) {
           clearSession('hackathon-participant-session');
           setSession(null);
           setSessionExpiredMessage(error.message);
@@ -1535,7 +1535,9 @@ function App() {
           setSessionSyncError(`Could not refresh your team status: ${error.message}`);
         }
       }
-    }, 15000);
+    };
+    validateSession();
+    const timer = window.setInterval(validateSession, 15000);
     return () => {
       active = false;
       window.clearInterval(timer);

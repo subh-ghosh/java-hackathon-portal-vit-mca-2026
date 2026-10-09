@@ -1171,6 +1171,27 @@ class HackathonApplicationTests {
     }
 
     @Test
+    void deletedTeamCredentialsCanNoLongerAuthenticate() throws Exception {
+        Team team = createTeam("DELETED TEAM LEADER", "26MCA9199", "deleted-team@example.test");
+        team.getStudents().forEach(student -> student.setPresent(true));
+        teams.saveAndFlush(team);
+        String credentials = "{\"email\":\"team-26mca9199@example.test\",\"contactNumber\":\""
+                + team.getPrimaryContactNumber() + "\"}";
+
+        mockMvc.perform(post("/api/student/login")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(credentials))
+                .andExpect(status().isOk());
+        mockMvc.perform(delete("/api/admin/teams/{teamId}", team.getId())
+                        .header("X-Admin-Password", ADMIN_PASSWORD))
+                .andExpect(status().isOk());
+        mockMvc.perform(post("/api/student/login")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(credentials))
+                .andExpect(status().isUnauthorized());
+    }
+
+    @Test
     void invalidTeamImportReturnsSpecificErrorAndDoesNotSaveAnyRows() throws Exception {
         List<String> validRow = new ArrayList<>(java.util.Collections.nCopies(19, ""));
         validRow.set(1, "test-user@example.test");
