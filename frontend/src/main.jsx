@@ -652,23 +652,19 @@ function Student({ team, credentials, logout, refreshSession, sessionSyncError }
             <button disabled={submitting}>{submitting ? 'Saving project links…' : team.submission ? 'Update project submission' : 'Submit project links'}</button>
           </form>
         </div>
-        <section className="card round-two-student">
+        {team.roundTwoOpen && <section className="card round-two-student">
           <div className="card-top round-two-heading">
             <div>
               <span className="eyebrow">ROUND 2</span>
               <h2>{team.advancedToRoundTwo ? 'Your next-round workspace' : 'Advancement status'}</h2>
             </div>
             <span className={`pill ${team.advancedToRoundTwo && team.roundTwoOpen ? 'round-two-open' : 'round-two-closed'}`}>
-              {team.roundTwoStatus === 'pending' ? 'Decision pending'
-                : team.advancedToRoundTwo ? team.roundTwoOpen ? 'Open' : 'Closed'
-                  : 'Not advanced'}
+              {team.advancedToRoundTwo ? 'Round 2 open' : 'Not advanced'}
             </span>
           </div>
           {!team.advancedToRoundTwo
             ? <p className="muted round-two-closed-note">
-              {team.roundTwoStatus === 'pending'
-                ? 'The Round 2 advancement decision has not been published for your team yet. Your Round 1 challenge and submission remain unchanged.'
-                : 'Your team has not advanced to Round 2. Your Round 1 challenge and submission remain available in this workspace.'}
+              You haven’t advanced to Round 2. Your Round 1 challenge and submission remain available in this workspace.
             </p>
             : team.problem
             ? <div className="round-two-problem">
@@ -679,9 +675,6 @@ function Student({ team, credentials, logout, refreshSession, sessionSyncError }
           {team.advancedToRoundTwo && team.roundTwoDeadline && <p className="muted round-two-deadline">
             Submission deadline: {new Date(team.roundTwoDeadline).toLocaleString()}
           </p>}
-          {team.advancedToRoundTwo && !team.roundTwoOpen && <p className="muted round-two-closed-note">
-            Round 2 submissions are closed. Your Round 1 challenge and submission remain unchanged.
-          </p>}
           {team.advancedToRoundTwo && team.roundTwoOpen && team.problem && <form className="round-two-submission" onSubmit={submitRoundTwo}>
             <span className="eyebrow">ROUND 2 · SUBMISSION</span>
             <label>Round 2 project document (Google Drive)<input required type="url" value={roundTwoLinks.googleDriveLink} onChange={event => setRoundTwoLinks(current => ({ ...current, googleDriveLink: event.target.value }))} /></label>
@@ -689,7 +682,7 @@ function Student({ team, credentials, logout, refreshSession, sessionSyncError }
             {roundTwoNotice && <div className={roundTwoNoticeType} role={roundTwoNoticeType === 'error' ? 'alert' : 'status'}>{roundTwoNotice}</div>}
             <button disabled={roundTwoSubmitting}>{roundTwoSubmitting ? 'Saving Round 2 links…' : roundTwoSubmission ? 'Update Round 2 submission' : 'Submit Round 2 links'}</button>
           </form>}
-        </section>
+        </section>}
       </div>
     </main>
   );

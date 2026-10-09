@@ -115,7 +115,7 @@ public class HackathonController {
         }
         boolean roundTwoPublished = roundTwoPublished();
         boolean roundTwoOpen = isRoundTwoOpen();
-        if (!roundTwoPublished || Boolean.parseBoolean(settingValue("login-paused", "false"))) {
+        if (!roundTwoOpen || Boolean.parseBoolean(settingValue("login-paused", "false"))) {
             enforceLoginWindow();
         }
         Team team = authenticateTeam(request.email(), request.contactNumber());

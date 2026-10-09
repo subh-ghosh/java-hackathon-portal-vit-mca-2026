@@ -915,6 +915,7 @@ class HackathonApplicationTests {
                 .andExpect(jsonPath("$.message").value(
                         org.hamcrest.Matchers.containsString("No team members are checked in")));
 
+        settings.save(new com.vit.hackathon.model.AppSetting("login-enabled", "false"));
         presentMember.setPresent(true);
         students.saveAndFlush(presentMember);
         mockMvc.perform(put("/api/student/round-two/submission")
@@ -958,10 +959,9 @@ class HackathonApplicationTests {
                         .content(new ObjectMapper().writeValueAsString(Map.of(
                                 "email", team.getPrimaryEmail(),
                                 "contactNumber", team.getPrimaryContactNumber()))))
-                .andExpect(status().isOk())
-                .andExpect(jsonPath("$.roundTwoPublished").value(true))
-                .andExpect(jsonPath("$.roundTwoOpen").value(false))
-                .andExpect(jsonPath("$.roundTwoSubmission.googleDriveLink").value(roundTwoDrive));
+                .andExpect(status().isForbidden())
+                .andExpect(jsonPath("$.message").value(
+                        org.hamcrest.Matchers.containsString("Participant login is currently disabled")));
 
         org.junit.jupiter.api.Assertions.assertEquals(roundOneDrive,
                 submissions.findByTeamId(team.getId()).orElseThrow().getGoogleDriveLink());
@@ -971,6 +971,32 @@ class HackathonApplicationTests {
                 roundTwoSubmissions.findByTeamId(team.getId()).orElseThrow().getGoogleDriveLink());
         org.junit.jupiter.api.Assertions.assertEquals(roundOneProblem.getId(),
                 teams.findById(team.getId()).orElseThrow().getProblem().getId());
+    }
+
+    @Test
+    void roundTwoActiveWindowLetsNonAdvancedTeamsSeeTheirStatus() throws Exception {
+        Team team = createTeam("ROUND TWO PENDING", "26MCA9982", "round-two-pending@example.test");
+        Student member = team.getStudents().get(0);
+        member.setPresent(true);
+        students.saveAndFlush(member);
+        settings.save(new com.vit.hackathon.model.AppSetting("login-enabled", "false"));
+
+        mockMvc.perform(put("/api/admin/round-two/settings")
+                        .header("X-Admin-Password", ADMIN_PASSWORD)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"enabled\":true,\"deadline\":\"2099-10-10T00:00:00Z\"}"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.open").value(true));
+
+        mockMvc.perform(post("/api/student/login")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(new ObjectMapper().writeValueAsString(Map.of(
+                                "email", team.getPrimaryEmail(),
+                                "contactNumber", team.getPrimaryContactNumber()))))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.roundTwoOpen").value(true))
+                .andExpect(jsonPath("$.advancedToRoundTwo").value(false))
+                .andExpect(jsonPath("$.roundTwoStatus").value("pending"));
     }
 
     private List<ImportedTeamField> teamFields(String leaderName, String leaderRegister, String username) {
