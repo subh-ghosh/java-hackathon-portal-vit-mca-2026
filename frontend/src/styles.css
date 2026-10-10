@@ -262,6 +262,8 @@ body:has(.login-shell) .portal-mode-switches{top:20px;bottom:auto}
 .problem-statement p{margin:0 0 14px;white-space:pre-wrap}
 .problem-statement p:first-child{color:#3e5947;font-weight:600}
 .problem-statement ol{display:grid;gap:10px;margin:16px 0;padding-left:1.8rem}
+.problem-statement ul{display:grid;gap:8px;margin:14px 0;padding-left:1.35rem}
+.problem-statement ul li::marker{color:#4d8056}
 .problem-statement li{padding-left:5px}
 .problem-statement li::marker{color:#4d8056;font-weight:800}
 .problem-statement li strong{color:#263d2d}
